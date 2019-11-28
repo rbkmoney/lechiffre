@@ -1,0 +1,11 @@
+{application, lechiffre, [
+    {description, "Encrypt/decrypt bank card data"},
+    {vsn, "0.1"},
+    {registered, []},
+    {applications, [
+        kernel,
+        stdlib,
+        thrift,
+        lechiffre_proto
+    ]}
+]}.

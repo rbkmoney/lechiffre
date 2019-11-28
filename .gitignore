@@ -1,0 +1,19 @@
+log
+logs
+/_build/
+/rebar.lock
+*~
+*.beam
+erl_crash.dump
+dev.config
+.tags*
+*.sublime-workspace
+.DS_Store
+
+# wercker
+/_builds/
+/_cache/
+/_projects/
+/_steps/
+/_temp/
+ci/rebar.config
