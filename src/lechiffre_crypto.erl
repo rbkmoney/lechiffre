@@ -15,6 +15,8 @@
 }).
 -type edf() :: #edf{}.
 
+-export_type([key/0]).
+
 -export([encrypt/2]).
 -export([decrypt/2]).
 
