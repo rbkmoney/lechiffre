@@ -1,7 +1,6 @@
 REBAR ?= $(shell which rebar3 2>/dev/null || which ./rebar3)
-
-COMPOSE_HTTP_TIMEOUT := 300
-export COMPOSE_HTTP_TIMEOUT
+SUBMODULES = build_utils
+SUBTARGETS = $(patsubst %,%/.git,$(SUBMODULES))
 
 UTILS_PATH := build_utils
 TEMPLATES_PATH := .
@@ -39,7 +38,7 @@ $(SUBTARGETS): %/.git: %
 
 submodules: $(SUBTARGETS)
 
-compile:
+compile: submodules
 	$(REBAR) compile
 
 test:
