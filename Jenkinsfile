@@ -41,25 +41,5 @@ build('lechiffre', 'docker-host', finalHook) {
         sh "make wc_test"
       }
     }
-    runStage('make release') {
-      withGithubPrivkey {
-        sh "make wc_release"
-      }
-    }
-    runStage('build image') {
-      sh "make build_image"
-    }
-
-    try {
-      if (masterlikeBranch()) {
-        runStage('push image') {
-          sh "make push_image"
-        }
-      }
-    } finally {
-      runStage('rm local image') {
-        sh 'make rm_local_image'
-      }
-    }
   }
 }
