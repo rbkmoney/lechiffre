@@ -1,4 +1,4 @@
--module(lechiffre_proto_utils).
+-module(lechiffre_thrift_utils).
 
 -export([serialize/2]).
 -export([deserialize/2]).
