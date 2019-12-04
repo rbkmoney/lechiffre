@@ -1,6 +1,14 @@
 -module(lechiffre_crypto).
 
+-type key_version() :: 1..4294967295.
 -type key() :: <<_:256>>.
+
+-type secret_key()  :: #{encryption_key := {key_version(), key()},
+                         decryption_key := #{
+                            key_version() := key()
+                        }
+                    }.
+
 -type iv()  :: binary().
 -type tag() :: binary().
 -type aad() :: binary().
@@ -11,49 +19,86 @@
     tag     :: tag(),
     iv      :: iv(),
     aad     :: aad(),
-    cipher  :: binary()
+    cipher  :: binary(),
+    key_version :: key_version()
 }).
 -type edf() :: #edf{}.
 
--export_type([key/0]).
+-type decryption_error() :: {decryption_failed, decryption_validation_failed |
+                                                bad_encrypted_data_format |
+                                                wrong_data_type |
+                                                {unknown_key_version, key_version()}
+                                            }.
+-type encryption_error() :: {encryption_failed, wrong_data_type}.
+
+-export_type([encryption_error/0]).
+-export_type([decryption_error/0]).
+-export_type([secret_key/0]).
 
 -export([encrypt/2]).
 -export([decrypt/2]).
 
--spec encrypt(key(), binary()) ->
+-spec encrypt(secret_key(), binary()) ->
     {ok, binary()} |
-    {error, {encryption_failed, _Reason}}.
+    {error, {encryption_failed, wrong_data_type}}.
 
-encrypt(Key, Plain) ->
+encrypt(#{encryption_key :={KeyVer, Key}}, Plain) ->
     IV = iv(),
     AAD = aad(),
     Version = <<"edf_v1">>,
     try
         {Cipher, Tag} = crypto:block_encrypt(aes_gcm, Key, IV, {AAD, Plain}),
-        EncryptedData = marshall_edf(#edf{version = Version, iv = IV, aad = AAD, cipher = Cipher, tag = Tag}),
+        EncryptedData = marshall_edf(#edf{
+            version = Version,
+            key_version = KeyVer,
+            iv = IV,
+            aad = AAD,
+            cipher = Cipher,
+            tag = Tag}),
         {ok, EncryptedData}
-    catch _Class:Reason ->
-        {error, {enryption_failed, Reason}}
+    catch error:badarg ->
+        {error, {encryption_failed, wrong_data_type}}
     end.
 
--spec decrypt(key(), binary()) ->
+-spec decrypt(secret_key(), binary()) ->
     {ok, binary()} |
-    {error, {decryption_failed, _Reason}}.
+    {error, decryption_error()}.
 
-decrypt(Key, MarshalledEDF) ->
+decrypt(SecretKey, MarshalledEDF) ->
     try
-        #edf{iv = IV, aad = AAD, cipher = Cipher, tag = Tag} = unmarshall_edf(MarshalledEDF),
+        #edf{
+            iv = IV,
+            aad = AAD,
+            cipher = Cipher,
+            tag = Tag,
+            key_version = KeyVer} = unmarshall_edf(MarshalledEDF),
+        Key = get_key(KeyVer, SecretKey),
         crypto:block_decrypt(aes_gcm, Key, IV, {AAD, Cipher, Tag})
     of
         error ->
-            {error, {decryption_failed, <<"decryption or validation failed">>}};
+            {error, {decryption_failed, decryption_validation_failed}};
         Plain ->
             {ok, Plain}
-    catch _Type:Error ->
-        {error, {decryption_failed, Error}}
+    catch
+        throw:bad_encrypted_data_format ->
+            {error, {decryption_failed, bad_encrypted_data_format}};
+        throw:{unknown_key_version, Ver} ->
+            {error, {decryption_failed, {unknown_key_version, Ver}}};
+        error:badarg ->
+            {error, {decryption_failed, wrong_data_type}}
     end.
 
 %%% Internal functions
+
+-spec get_key(key_version(), secret_key()) -> key().
+
+get_key(KeyVer, #{decryption_key := Keys}) ->
+    case maps:get(KeyVer, Keys, undefined) of
+        undefined ->
+            throw({unknown_key_version, KeyVer});
+        Key ->
+            Key
+    end.
 
 -spec iv() -> iv().
 
@@ -67,16 +112,29 @@ aad() ->
 
 -spec marshall_edf(edf()) -> binary().
 
-marshall_edf(#edf{version = Ver, tag = Tag, iv = IV, aad = AAD, cipher = Cipher})
+marshall_edf(#edf{version = Ver, key_version = KeyVer, tag = Tag, iv = IV, aad = AAD, cipher = Cipher})
     when
+        KeyVer > 0 andalso KeyVer < 4294967295, %% max value unsinged integer 4 byte
         bit_size(Tag) =:= 128,
         bit_size(IV) =:= 128,
         bit_size(AAD) =:= 32
     ->
-        <<Ver:6/binary, Tag:16/binary, IV:16/binary, AAD:4/binary, Cipher/binary>>.
+        Bin = binary:encode_unsigned(KeyVer),
+        KeyVerBin = <<0:((4-(size(Bin) rem 4))*8), Bin/binary>>,
+        <<KeyVerBin:4/binary, Ver:6/binary, Tag:16/binary, IV:16/binary, AAD:4/binary, Cipher/binary>>.
 
 -spec unmarshall_edf(binary()) -> edf().
 
-unmarshall_edf(<<"edf_v1", Tag:16/binary, IV:16/binary, AAD:4/binary, Cipher/binary>>) ->
-    #edf{version = <<"edf_v1">>, tag = Tag, iv = IV, aad = AAD, cipher = Cipher}.
-
+unmarshall_edf(<<KeyVerBin:4/binary, Ver:6/binary, Tag:16/binary, IV:16/binary, AAD:4/binary, Cipher/binary>>)
+when Ver =:= <<"edf_v1">> ->
+    KeyVer = binary:decode_unsigned(KeyVerBin),
+    #edf{
+        version = <<"edf_v1">>,
+        tag = Tag,
+        iv = IV,
+        aad = AAD,
+        cipher = Cipher,
+        key_version = KeyVer
+    };
+unmarshall_edf(_Other) ->
+    throw(bad_encrypted_data_format).

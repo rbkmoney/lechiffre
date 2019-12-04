@@ -1,41 +1,48 @@
 -module(lechiffre).
-
--type secret_key()      :: lechiffre_crypto:key().
+-type secret_key()      :: lechiffre_crypto:secret_key().
 -type data()            :: term().
--type data_encrypt()    :: binary().
+-type encrypted_data()  :: binary().
 
--type encode_error() :: {encryption_failed, _Reason} |
-                        {serialize_failed, lechiffre_thrift_utils:thrift_error()}.
+-type encoding_error()  ::  {encryption_failed, lechiffre_crypto:encryption_error()} |
+                            {serialization_failed, lechiffre_thrift_utils:thrift_error()}.
 
--type decode_error() :: {decryption_failed, _Reason} |
-                        {deserialize_failed, lechiffre_thrift_utils:thrift_error()}.
+-type decoding_error()  ::  {decryption_failed, lechiffre_crypto:decryption_error()} |
+                            {deserialization_failed, lechiffre_thrift_utils:thrift_error()}.
 
 -type thrift_type() :: lechiffre_thrift_utils:thrift_type().
 
--export_type([encode_error/0]).
--export_type([decode_error/0]).
+-export_type([secret_key/0]).
+-export_type([encoding_error/0]).
+-export_type([decoding_error/0]).
 
 -export([encode/3]).
 -export([decode/3]).
 
 -spec encode(thrift_type(), data(), secret_key()) ->
-    {ok, data_encrypt()} |
-    {error, encode_error()}.
+    {ok, encrypted_data()} |
+    {error, encoding_error()}.
 
 encode(ThriftType, Data, SecretKey) ->
     case lechiffre_thrift_utils:serialize(ThriftType, Data) of
         {ok, ThriftBin}    -> lechiffre_crypto:encrypt(SecretKey, ThriftBin);
-        {error, _} = Error -> Error
+        {error, _} = Error ->
+            {error, {serialization_failed, Error}}
     end.
 
--spec decode(thrift_type(), data_encrypt(), secret_key()) ->
+-spec decode(thrift_type(), encrypted_data(), secret_key()) ->
     {ok, data()} |
-    {error, decode_error()}.
+    {error, decoding_error()}.
 
 decode(ThriftType, EncryptedData, SecretKey) ->
-    case lechiffre_crypto:decrypt(SecretKey, EncryptedData) of
+    Data = case lechiffre_crypto:decrypt(SecretKey, EncryptedData) of
         {ok, ThriftBin} ->
             lechiffre_thrift_utils:deserialize(ThriftType, ThriftBin);
         DecryptError ->
             DecryptError
+    end,
+    case Data of
+        {error, {thrift, _} = Error} ->
+            {error, {deserialization_failed, Error}};
+        Other ->
+            Other
     end.

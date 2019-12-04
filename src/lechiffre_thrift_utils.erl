@@ -79,5 +79,7 @@ deserialize(Type, Data) ->
 
 %% Internals
 
+-spec new_protocol(any()) -> term().
+
 new_protocol(Trans) ->
     thrift_binary_protocol:new(Trans, [{strict_read, true}, {strict_write, true}]).

@@ -9,11 +9,5 @@ dev.config
 .tags*
 *.sublime-workspace
 .DS_Store
+docker-compose.yml
 
-# wercker
-/_builds/
-/_cache/
-/_projects/
-/_steps/
-/_temp/
-ci/rebar.config
