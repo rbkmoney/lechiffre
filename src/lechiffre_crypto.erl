@@ -2,12 +2,13 @@
 
 -type key_version() :: 1..4294967295.
 -type key() :: <<_:256>>.
-
--type secret_key()  :: #{encryption_key := {key_version(), key()},
-                         decryption_key := #{
-                            key_version() := key()
-                        }
-                    }.
+-type decryption_keys() :: #{
+    key_version() := key()
+}.
+-type secret_keys() :: #{
+    encryption_key := {key_version(), key()},
+    decryption_key := decryption_keys()
+}.
 
 -type iv()  :: binary().
 -type tag() :: binary().
@@ -15,11 +16,11 @@
 
 %% Encrypted Data Format
 -record(edf, {
-    version :: binary(),
-    tag     :: tag(),
-    iv      :: iv(),
-    aad     :: aad(),
-    cipher  :: binary(),
+    version     :: binary(),
+    tag         :: tag(),
+    iv          :: iv(),
+    aad         :: aad(),
+    cipher      :: binary(),
     key_version :: key_version()
 }).
 -type edf() :: #edf{}.
@@ -31,18 +32,19 @@
                                             }.
 -type encryption_error() :: {encryption_failed, wrong_data_type}.
 
+-export_type([decryption_keys/0]).
 -export_type([encryption_error/0]).
 -export_type([decryption_error/0]).
--export_type([secret_key/0]).
+-export_type([secret_keys/0]).
 
 -export([encrypt/2]).
 -export([decrypt/2]).
 
--spec encrypt(secret_key(), binary()) ->
+-spec encrypt(secret_keys(), binary()) ->
     {ok, binary()} |
     {error, {encryption_failed, wrong_data_type}}.
 
-encrypt(#{encryption_key :={KeyVer, Key}}, Plain) ->
+encrypt(#{encryption_key := {KeyVer, Key}}, Plain) ->
     IV = iv(),
     AAD = aad(),
     Version = <<"edf_v1">>,
@@ -60,11 +62,11 @@ encrypt(#{encryption_key :={KeyVer, Key}}, Plain) ->
         {error, {encryption_failed, wrong_data_type}}
     end.
 
--spec decrypt(secret_key(), binary()) ->
+-spec decrypt(secret_keys(), binary()) ->
     {ok, binary()} |
     {error, decryption_error()}.
 
-decrypt(SecretKey, MarshalledEDF) ->
+decrypt(SecretKeys, MarshalledEDF) ->
     try
         #edf{
             iv = IV,
@@ -72,7 +74,7 @@ decrypt(SecretKey, MarshalledEDF) ->
             cipher = Cipher,
             tag = Tag,
             key_version = KeyVer} = unmarshall_edf(MarshalledEDF),
-        Key = get_key(KeyVer, SecretKey),
+        Key = get_key(KeyVer, SecretKeys),
         crypto:block_decrypt(aes_gcm, Key, IV, {AAD, Cipher, Tag})
     of
         error ->
@@ -90,14 +92,14 @@ decrypt(SecretKey, MarshalledEDF) ->
 
 %%% Internal functions
 
--spec get_key(key_version(), secret_key()) -> key().
+-spec get_key(key_version(), secret_keys()) -> key().
 
 get_key(KeyVer, #{decryption_key := Keys}) ->
-    case maps:get(KeyVer, Keys, undefined) of
-        undefined ->
-            throw({unknown_key_version, KeyVer});
-        Key ->
-            Key
+     case maps:find(KeyVer, Keys) of
+        {ok, Key} ->
+            Key;
+        error ->
+            throw({unknown_key_version, KeyVer})
     end.
 
 -spec iv() -> iv().
@@ -119,15 +121,12 @@ marshall_edf(#edf{version = Ver, key_version = KeyVer, tag = Tag, iv = IV, aad =
         bit_size(IV) =:= 128,
         bit_size(AAD) =:= 32
     ->
-        Bin = binary:encode_unsigned(KeyVer),
-        KeyVerBin = <<0:((4-(size(Bin) rem 4))*8), Bin/binary>>,
-        <<KeyVerBin:4/binary, Ver:6/binary, Tag:16/binary, IV:16/binary, AAD:4/binary, Cipher/binary>>.
+        <<Ver:6/binary, KeyVer:32/integer, Tag:16/binary, IV:16/binary, AAD:4/binary, Cipher/binary>>.
 
 -spec unmarshall_edf(binary()) -> edf().
 
-unmarshall_edf(<<KeyVerBin:4/binary, Ver:6/binary, Tag:16/binary, IV:16/binary, AAD:4/binary, Cipher/binary>>)
+unmarshall_edf(<<Ver:6/binary, KeyVer:32/integer, Tag:16/binary, IV:16/binary, AAD:4/binary, Cipher/binary>>)
 when Ver =:= <<"edf_v1">> ->
-    KeyVer = binary:decode_unsigned(KeyVerBin),
     #edf{
         version = <<"edf_v1">>,
         tag = Tag,

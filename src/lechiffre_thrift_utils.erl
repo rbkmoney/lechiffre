@@ -54,8 +54,8 @@
     {ok, binary()} | {error, thrift_error()}.
 
 serialize(Type, Data) ->
-    {ok, Trans} = thrift_membuffer_transport:new(),
-    {ok, Proto} = new_protocol(Trans),
+    {ok, Transport} = thrift_membuffer_transport:new(),
+    {ok, Proto} = new_protocol(Transport),
     case thrift_protocol:write(Proto, {Type, Data}) of
         {NewProto, ok} ->
             {_, {ok, Result}} = thrift_protocol:close_transport(NewProto),
@@ -68,8 +68,8 @@ serialize(Type, Data) ->
     {ok, term()} | {error, thrift_error()}.
 
 deserialize(Type, Data) ->
-    {ok, Trans} = thrift_membuffer_transport:new(Data),
-    {ok, Proto} = new_protocol(Trans),
+    {ok, Transport} = thrift_membuffer_transport:new(Data),
+    {ok, Proto} = new_protocol(Transport),
     case thrift_protocol:read(Proto, Type) of
         {_NewProto, {ok, Result}} ->
             {ok, Result};
@@ -81,5 +81,5 @@ deserialize(Type, Data) ->
 
 -spec new_protocol(any()) -> term().
 
-new_protocol(Trans) ->
-    thrift_binary_protocol:new(Trans, [{strict_read, true}, {strict_write, true}]).
+new_protocol(Transport) ->
+    thrift_binary_protocol:new(Transport, [{strict_read, true}, {strict_write, true}]).

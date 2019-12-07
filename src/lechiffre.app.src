@@ -1,5 +1,5 @@
 {application, lechiffre, [
-    {description, "Encrypt/decrypt data, whose describe in thrift protocol"},
+    {description, "Encrypt/decrypt data, described in thrift protocol"},
     {vsn, "0.1"},
     {registered, []},
     {applications, [

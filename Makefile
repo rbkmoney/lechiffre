@@ -55,3 +55,6 @@ xref:
 
 dialyze:
 	$(REBAR) dialyzer
+
+lint:
+	elvis rock
