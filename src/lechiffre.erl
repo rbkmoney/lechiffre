@@ -2,12 +2,12 @@
 
 -define(SECRET_KEYS_TABLE, ?MODULE).
 
+-behaviour(supervisor).
+
 -type options() :: #{
-    secret_opts := #{
-        encryption_key_path := {key_version(), key_path()},
-        decryption_key_path := #{
-            key_version() := key_path()
-        }
+    encryption_key_path := {key_version(), key_path()},
+    decryption_key_path := #{
+        key_version() := key_path()
     }
 }.
 
@@ -15,7 +15,7 @@
 -type key_version()     :: lechiffre_crypto:key_version().
 -type secret_keys()     :: lechiffre_crypto:secret_keys().
 -type data()            :: term().
--type encrypted_data()  :: binary().
+-type encoded_data()  :: binary().
 
 -type encoding_error()  :: {encryption_failed, lechiffre_crypto:encryption_error()} |
                            {serialization_failed, lechiffre_thrift_utils:thrift_error()}.
@@ -52,26 +52,26 @@ child_spec(Options) ->
 -spec init(options()) ->
     {ok, {supervisor:sup_flags(), [supervisor:child_spec()]}}.
 
-init(#{secret_opts := Opts}) ->
+init(Opts) ->
     SecretKeys = read_secret_keys(Opts),
     ok = create_table(SecretKeys),
     {ok, {#{}, []}}.
 
 -spec encode(thrift_type(), data()) ->
-    {ok, encrypted_data()} |
+    {ok, encoded_data()} |
     {error, encoding_error()}.
 
 encode(ThriftType, Data) ->
     SecretKeys = lookup_secret_value(),
     case lechiffre_thrift_utils:serialize(ThriftType, Data) of
-        {ok, ThriftBin}    ->
+        {ok, ThriftBin} ->
             lechiffre_crypto:encrypt(SecretKeys, ThriftBin);
         {error, _} = Error ->
             {error, {serialization_failed, Error}}
     end.
 
 -spec encode(thrift_type(), data(), secret_keys()) ->
-    {ok, encrypted_data()} |
+    {ok, encoded_data()} |
     {error, encoding_error()}.
 
 encode(ThriftType, Data, SecretKeys) ->
@@ -82,7 +82,7 @@ encode(ThriftType, Data, SecretKeys) ->
             {error, {serialization_failed, Error}}
     end.
 
--spec decode(thrift_type(), encrypted_data()) ->
+-spec decode(thrift_type(), encoded_data()) ->
     {ok, data()} |
     {error, decoding_error()}.
 
@@ -97,7 +97,7 @@ decode(ThriftType, EncryptedData) ->
             DecryptError
     end.
 
--spec decode(thrift_type(), encrypted_data(), secret_keys()) ->
+-spec decode(thrift_type(), encoded_data(), secret_keys()) ->
     {ok, data()} |
     {error, decoding_error()}.
 
@@ -116,8 +116,8 @@ decode(ThriftType, EncryptedData, SecretKeys) ->
 -spec read_secret_keys(options()) -> secret_keys().
 
 read_secret_keys(Options) ->
-    {Ver, EncryptionPath} = maps:get(encrytion_path, Options),
-    DecryptionKeysPath = maps:get(decryption_path, Options),
+    {Ver, EncryptionPath} = maps:get(encryption_key_path, Options),
+    DecryptionKeysPath = maps:get(decryption_key_path, Options),
     DecryptionKeys = maps:fold(fun(KeyVer, Path, Acc) ->
         SecretKey = read_key_file(Path),
         Acc#{
@@ -139,7 +139,7 @@ read_key_file(SecretPath) ->
 -spec create_table(secret_keys()) -> ok.
 
 create_table(SecretKeys) ->
-    _ = ets:new(?SECRET_KEYS_TABLE, [set, private, named_table, {read_concurrency, true}]),
+    _ = ets:new(?SECRET_KEYS_TABLE, [set, public, named_table, {read_concurrency, true}]),
     insert_secret_value(SecretKeys),
     ok.
 
