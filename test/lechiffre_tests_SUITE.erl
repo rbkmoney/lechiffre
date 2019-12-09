@@ -19,6 +19,10 @@
 
 -export([test/0]).
 
+-behaviour(supervisor).
+-export([init/1]).
+
+
 -export([
     unknown_decrypt_key_test/1,
     wrong_key_test/1,
@@ -75,6 +79,12 @@ init_per_testcase(_Name, C) ->
 end_per_testcase(_Name, _C) ->
     ok.
 
+-spec init([]) ->
+    {ok, {supervisor:sup_flags(), [supervisor:child_spec()]}}.
+
+init([]) ->
+    {ok, {#{strategy => one_for_all, intensity => 1, period => 1}, []}}.
+
 -spec get_source(binary(), config()) ->
     binary().
 
@@ -96,7 +106,7 @@ encrypt_hide_secret_key_ok_test(Config) ->
             1 => get_source(Filename, Config)
         }
     },
-    LechiffrePid = start_service(lechiffre, Options),
+    LechiffrePid = start_service(Options),
     {ThriftType, PaymentToolToken} = payment_tool_token(),
 
     {ok, EncryptedToken} = lechiffre:encode(ThriftType, PaymentToolToken),
@@ -150,12 +160,14 @@ payment_tool_token() ->
     },
     {Type, Token}.
 
--spec start_service(module(), lechiffre:options()) ->
+
+-spec start_service(lechiffre:options()) ->
     pid().
 
-start_service(Module, Args) ->
-    {ok, Pid} = gen_server:start(Module, Args, []),
-    _ = unlink(Pid),
+start_service(Args) ->
+    {ok, SupPid} = supervisor:start_link(?MODULE, []),
+    {ok, Pid} = supervisor:start_child(SupPid, lechiffre:child_spec(Args)),
+    _ = unlink(SupPid),
     Pid.
 
 -spec stop_service(pid()) ->

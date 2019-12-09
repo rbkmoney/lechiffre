@@ -30,7 +30,8 @@
 -export_type([decoding_error/0]).
 
 %% GenServer
-
+-export([child_spec/1]).
+-export([start_link/1]).
 -export([init       /1]).
 -export([handle_call/3]).
 -export([handle_cast/2]).
@@ -42,6 +43,23 @@
 -export([encode/3]).
 -export([decode/2]).
 -export([decode/3]).
+
+-spec child_spec(options()) ->
+    supervisor:child_spec().
+
+child_spec(Options) ->
+    #{
+        id => ?MODULE,
+        start => {?MODULE, start_link, [Options]},
+        type => worker,
+        restart => permanent
+    }.
+
+-spec start_link(options()) ->
+    {ok, pid()}.
+
+start_link(Options) ->
+    gen_server:start({local, ?MODULE}, ?MODULE, Options, []).
 
 -spec encode(thrift_type(), data()) ->
     {ok, encoded_data()} |
