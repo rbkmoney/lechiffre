@@ -18,10 +18,10 @@
 -type encoded_data()  :: binary().
 
 -type encoding_error()  :: {encryption_failed, lechiffre_crypto:encryption_error()} |
-                           {serialization_failed, lechiffre_thrift_utils:thrift_error()}.
+                           lechiffre_thrift_utils:thrift_error().
 
 -type decoding_error()  :: {decryption_failed, lechiffre_crypto:decryption_error()} |
-                           {deserialization_failed, lechiffre_thrift_utils:thrift_error()}.
+                           lechiffre_thrift_utils:thrift_error().
 
 -type thrift_type()     :: lechiffre_thrift_utils:thrift_type().
 
@@ -91,8 +91,6 @@ decode(ThriftType, EncryptedData) ->
     case lechiffre_crypto:decrypt(SecretKeys, EncryptedData) of
         {ok, ThriftBin} ->
             lechiffre_thrift_utils:deserialize(ThriftType, ThriftBin);
-        {error, {thrift, _} = Error} ->
-            {error, {deserialization_failed, Error}};
         DecryptError ->
             DecryptError
     end.
@@ -105,8 +103,6 @@ decode(ThriftType, EncryptedData, SecretKeys) ->
     case lechiffre_crypto:decrypt(SecretKeys, EncryptedData) of
         {ok, ThriftBin} ->
             lechiffre_thrift_utils:deserialize(ThriftType, ThriftBin);
-        {error, {thrift, _} = Error} ->
-            {error, {deserialization_failed, Error}};
         DecryptError ->
             DecryptError
     end.

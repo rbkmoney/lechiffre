@@ -36,6 +36,7 @@
 -export_type([encryption_error/0]).
 -export_type([decryption_error/0]).
 -export_type([secret_keys/0]).
+-export_type([key_version/0]).
 
 -export([encrypt/2]).
 -export([decrypt/2]).

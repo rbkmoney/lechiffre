@@ -43,7 +43,8 @@
     Default :: any()
 }).
 
--type thrift_error() :: {thrift, {protocol, any()}}.
+-type thrift_error() :: {serialization_failed, {thrift_protocol, any()}} |
+                        {deserialization_failed, {thrift_protocol, any()}}.
 
 -export_type([thrift_type/0]).
 -export_type([thrift_error/0]).
@@ -60,8 +61,8 @@ serialize(Type, Data) ->
         {NewProto, ok} ->
             {_, {ok, Result}} = thrift_protocol:close_transport(NewProto),
             {ok, Result};
-        {_NewProto, {error, Reason}} ->
-            {error, {thrift, {protocol, Reason}}}
+        {_NewProto, {error, {thrift, {protocol, Reason}}}} ->
+            {error, {serialization_failed, {thrift_protocol, Reason}}}
     end.
 
 -spec deserialize(thrift_type(), binary()) ->
@@ -73,8 +74,8 @@ deserialize(Type, Data) ->
     case thrift_protocol:read(Proto, Type) of
         {_NewProto, {ok, Result}} ->
             {ok, Result};
-        {_NewProto, {error, Reason}} ->
-            {error, {thrift, {protocol, Reason}}}
+        {_NewProto, {error, {thrift, {protocol, Reason}}}} ->
+            {error, {deserialization_failed, {thrift_protocol, Reason}}}
     end.
 
 %% Internals
