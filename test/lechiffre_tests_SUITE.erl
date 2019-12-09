@@ -4,7 +4,7 @@
 -include_lib("eunit/include/eunit.hrl").
 
 -record('BankCard', {
-    'token' :: binary()
+    token :: binary()
 }).
 
 -export([struct_info/1]).
@@ -18,10 +18,6 @@
 -export([end_per_testcase/2]).
 
 -export([test/0]).
-
--behaviour(supervisor).
--export([init/1]).
-
 
 -export([
     unknown_decrypt_key_test/1,
@@ -79,12 +75,6 @@ init_per_testcase(_Name, C) ->
 end_per_testcase(_Name, _C) ->
     ok.
 
--spec init([]) ->
-    {ok, {supervisor:sup_flags(), [supervisor:child_spec()]}}.
-
-init([]) ->
-    {ok, {#{strategy => one_for_all, intensity => 1, period => 1}, []}}.
-
 -spec get_source(binary(), config()) ->
     binary().
 
@@ -106,14 +96,12 @@ encrypt_hide_secret_key_ok_test(Config) ->
             1 => get_source(Filename, Config)
         }
     },
-    LechiffrePid = start_service(Options),
+    lechiffre:start_link(Options),
     {ThriftType, PaymentToolToken} = payment_tool_token(),
 
     {ok, EncryptedToken} = lechiffre:encode(ThriftType, PaymentToolToken),
     {ok, Value} = lechiffre:decode(ThriftType, EncryptedToken),
-    ?assertEqual(PaymentToolToken, Value),
-
-    stop_service(LechiffrePid).
+    ?assertEqual(PaymentToolToken, Value).
 
 unknown_decrypt_key_test(_Config) ->
     {ThriftType, PaymentToolToken} = payment_tool_token(),
@@ -159,22 +147,6 @@ payment_tool_token() ->
         token = <<"TOKEN">>
     },
     {Type, Token}.
-
-
--spec start_service(lechiffre:options()) ->
-    pid().
-
-start_service(Args) ->
-    {ok, SupPid} = supervisor:start_link(?MODULE, []),
-    {ok, Pid} = supervisor:start_child(SupPid, lechiffre:child_spec(Args)),
-    _ = unlink(SupPid),
-    Pid.
-
--spec stop_service(pid()) ->
-    _.
-
-stop_service(Pid) ->
-    exit(Pid, shutdown).
 
 %% For Thrift compile
 
