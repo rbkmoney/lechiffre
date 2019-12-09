@@ -96,14 +96,14 @@ encrypt_hide_secret_key_ok_test(Config) ->
             1 => get_source(Filename, Config)
         }
     },
-    LechiffreSupPid = start_service_sup(lechiffre, Options),
+    LechiffrePid = start_service(lechiffre, Options),
     {ThriftType, PaymentToolToken} = payment_tool_token(),
 
     {ok, EncryptedToken} = lechiffre:encode(ThriftType, PaymentToolToken),
     {ok, Value} = lechiffre:decode(ThriftType, EncryptedToken),
     ?assertEqual(PaymentToolToken, Value),
 
-    stop_service_sup(LechiffreSupPid).
+    stop_service(LechiffrePid).
 
 unknown_decrypt_key_test(_Config) ->
     {ThriftType, PaymentToolToken} = payment_tool_token(),
@@ -150,19 +150,19 @@ payment_tool_token() ->
     },
     {Type, Token}.
 
--spec start_service_sup(module(), lechiffre:options()) ->
+-spec start_service(module(), lechiffre:options()) ->
     pid().
 
-start_service_sup(Module, Options) ->
-    {ok, SupPid} = supervisor:start_link(Module, Options),
-    _ = unlink(SupPid),
-    SupPid.
+start_service(Module, Args) ->
+    {ok, Pid} = gen_server:start(Module, Args, []),
+    _ = unlink(Pid),
+    Pid.
 
--spec stop_service_sup(pid()) ->
+-spec stop_service(pid()) ->
     _.
 
-stop_service_sup(SupPid) ->
-    exit(SupPid, shutdown).
+stop_service(Pid) ->
+    exit(Pid, shutdown).
 
 %% For Thrift compile
 

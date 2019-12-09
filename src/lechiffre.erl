@@ -2,7 +2,7 @@
 
 -define(SECRET_KEYS_TABLE, ?MODULE).
 
--behaviour(supervisor).
+-behaviour(gen_server).
 
 -type options() :: #{
     encryption_key_path := {key_version(), key_path()},
@@ -29,33 +29,19 @@
 -export_type([encoding_error/0]).
 -export_type([decoding_error/0]).
 
-%% Supervisor
+%% GenServer
 
--export([child_spec/1]).
--export([init/1]).
+-export([init       /1]).
+-export([handle_call/3]).
+-export([handle_cast/2]).
+-export([handle_info/2]).
+-export([terminate  /2]).
+-export([code_change/3]).
 
 -export([encode/2]).
 -export([encode/3]).
 -export([decode/2]).
 -export([decode/3]).
-
--spec child_spec(options()) ->
-    supervisor:child_spec() | no_return().
-
-child_spec(Options) ->
-    #{
-        id => ?MODULE,
-        start => {supervisor, start_link, [?MODULE, Options]},
-        type => supervisor
-    }.
-
--spec init(options()) ->
-    {ok, {supervisor:sup_flags(), [supervisor:child_spec()]}}.
-
-init(Opts) ->
-    SecretKeys = read_secret_keys(Opts),
-    ok = create_table(SecretKeys),
-    {ok, {#{}, []}}.
 
 -spec encode(thrift_type(), data()) ->
     {ok, encoded_data()} |
@@ -107,7 +93,54 @@ decode(ThriftType, EncryptedData, SecretKeys) ->
             DecryptError
     end.
 
-%% Internal functions
+%% Supervisor
+
+-type st() :: #{
+    options => options()
+}.
+
+-spec init(options()) ->
+    {ok, st()}.
+
+init(Options) ->
+    SecretKeys = read_secret_keys(Options),
+    ok = create_table(SecretKeys),
+    {ok, #{options => Options}}.
+
+-spec handle_call(term(), term(), st()) ->
+    {reply, term(), st()} | {noreply, st()}.
+
+handle_call(Call, _From, State) ->
+    _ = logger:warning("unexpected call received: ~tp", [Call]),
+    {noreply, State}.
+
+-spec handle_cast(_, st()) ->
+    {noreply, st()}.
+
+handle_cast(Cast, State) ->
+    _ = logger:warning("unexpected cast received: ~tp", [Cast]),
+    {noreply, State}.
+
+-spec handle_info(_, st()) ->
+    {noreply, st()}.
+
+handle_info(Info, State) ->
+    _ = logger:warning("unexpected info received: ~tp", [Info]),
+    {noreply, State}.
+
+-spec terminate(Reason, atom()) ->
+    ok when
+        Reason :: normal | shutdown | {shutdown, term()} | term().
+
+terminate(_Reason, _State) ->
+    ok.
+
+-spec code_change(term(), term(), term()) -> {ok, atom()}.
+
+code_change(_OldVsn, State, _Extra) ->
+    {ok, State}.
+
+%%
 
 -spec read_secret_keys(options()) -> secret_keys().
 
