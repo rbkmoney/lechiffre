@@ -42,7 +42,7 @@ compile: submodules
 	$(REBAR) compile
 
 test:
-	$(REBAR) eunit
+	$(REBAR) ct
 
 clean:
 	$(REBAR) clean

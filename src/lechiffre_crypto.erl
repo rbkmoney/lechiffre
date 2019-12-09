@@ -1,6 +1,8 @@
 -module(lechiffre_crypto).
 
--type key_version() :: 1..4294967295.
+-define(MAX_UINT_32, 4294967295).
+
+-type key_version() :: 1..?MAX_UINT_32.
 -type key() :: <<_:256>>.
 -type decryption_keys() :: #{
     key_version() := key()
@@ -51,7 +53,7 @@ encrypt(#{encryption_key := {KeyVer, Key}}, Plain) ->
     Version = <<"edf_v1">>,
     try
         {Cipher, Tag} = crypto:block_encrypt(aes_gcm, Key, IV, {AAD, Plain}),
-        EncryptedData = marshall_edf(#edf{
+        EncryptedData = marshal_edf(#edf{
             version = Version,
             key_version = KeyVer,
             iv = IV,
@@ -74,7 +76,7 @@ decrypt(SecretKeys, MarshalledEDF) ->
             aad = AAD,
             cipher = Cipher,
             tag = Tag,
-            key_version = KeyVer} = unmarshall_edf(MarshalledEDF),
+            key_version = KeyVer} = unmarshal_edf(MarshalledEDF),
         Key = get_key(KeyVer, SecretKeys),
         crypto:block_decrypt(aes_gcm, Key, IV, {AAD, Cipher, Tag})
     of
@@ -96,7 +98,7 @@ decrypt(SecretKeys, MarshalledEDF) ->
 -spec get_key(key_version(), secret_keys()) -> key().
 
 get_key(KeyVer, #{decryption_key := Keys}) ->
-     case maps:find(KeyVer, Keys) of
+    case maps:find(KeyVer, Keys) of
         {ok, Key} ->
             Key;
         error ->
@@ -113,20 +115,20 @@ iv() ->
 aad() ->
     crypto:strong_rand_bytes(4).
 
--spec marshall_edf(edf()) -> binary().
+-spec marshal_edf(edf()) -> binary().
 
-marshall_edf(#edf{version = Ver, key_version = KeyVer, tag = Tag, iv = IV, aad = AAD, cipher = Cipher})
+marshal_edf(#edf{version = Ver, key_version = KeyVer, tag = Tag, iv = IV, aad = AAD, cipher = Cipher})
     when
-        KeyVer > 0 andalso KeyVer < 4294967295, %% max value unsinged integer 4 byte
+        KeyVer > 0 andalso KeyVer < ?MAX_UINT_32, %% max value unsinged integer 4 byte
         bit_size(Tag) =:= 128,
         bit_size(IV) =:= 128,
         bit_size(AAD) =:= 32
     ->
         <<Ver:6/binary, KeyVer:32/integer, Tag:16/binary, IV:16/binary, AAD:4/binary, Cipher/binary>>.
 
--spec unmarshall_edf(binary()) -> edf().
+-spec unmarshal_edf(binary()) -> edf().
 
-unmarshall_edf(<<Ver:6/binary, KeyVer:32/integer, Tag:16/binary, IV:16/binary, AAD:4/binary, Cipher/binary>>)
+unmarshal_edf(<<Ver:6/binary, KeyVer:32/integer, Tag:16/binary, IV:16/binary, AAD:4/binary, Cipher/binary>>)
 when Ver =:= <<"edf_v1">> ->
     #edf{
         version = <<"edf_v1">>,
@@ -136,5 +138,5 @@ when Ver =:= <<"edf_v1">> ->
         cipher = Cipher,
         key_version = KeyVer
     };
-unmarshall_edf(_Other) ->
+unmarshal_edf(_Other) ->
     throw(bad_encrypted_data_format).

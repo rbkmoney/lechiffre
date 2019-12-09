@@ -15,7 +15,7 @@
 -type key_version()     :: lechiffre_crypto:key_version().
 -type secret_keys()     :: lechiffre_crypto:secret_keys().
 -type data()            :: term().
--type encoded_data()  :: binary().
+-type encoded_data()    :: binary().
 
 -type encoding_error()  :: {encryption_failed, lechiffre_crypto:encryption_error()} |
                            lechiffre_thrift_utils:thrift_error().
@@ -130,7 +130,7 @@ read_secret_keys(Options) ->
 
 read_key_file(SecretPath) ->
     {ok, Secret} = file:read_file(SecretPath),
-    string:trim(Secret).
+    genlib_string:trim(Secret).
 
 -spec create_table(secret_keys()) -> ok.
 
