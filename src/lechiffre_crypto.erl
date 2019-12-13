@@ -12,13 +12,20 @@
     decryption_key := decryption_keys()
 }.
 
--type iv()  :: binary().
--type tag() :: binary().
--type aad() :: binary().
+-opaque encryption_params() :: #{
+    version := version(),
+    iv      := iv(),
+    aad     := aad()
+}.
+
+-type iv()      :: binary().
+-type tag()     :: binary().
+-type aad()     :: binary().
+-type version() :: binary().
 
 %% Encrypted Data Format
 -record(edf, {
-    version     :: binary(),
+    version     :: version(),
     tag         :: tag(),
     iv          :: iv(),
     aad         :: aad(),
@@ -34,14 +41,27 @@
                                             }.
 -type encryption_error() :: {encryption_failed, wrong_data_type}.
 
+-export_type([encryption_params/0]).
 -export_type([decryption_keys/0]).
 -export_type([encryption_error/0]).
 -export_type([decryption_error/0]).
 -export_type([secret_keys/0]).
 -export_type([key_version/0]).
 
+-export([get_encryption_params/0]).
 -export([encrypt/2]).
+-export([encrypt/3]).
 -export([decrypt/2]).
+
+-spec get_encryption_params() ->
+    encryption_params().
+
+get_encryption_params() ->
+    #{
+        version => get_version(),
+        iv      => iv(),
+        aad     => aad()
+    }.
 
 -spec encrypt(secret_keys(), binary()) ->
     {ok, binary()} |
@@ -50,7 +70,29 @@
 encrypt(#{encryption_key := {KeyVer, Key}}, Plain) ->
     IV = iv(),
     AAD = aad(),
-    Version = <<"edf_v1">>,
+    Version = get_version(),
+    try
+        {Cipher, Tag} = crypto:block_encrypt(aes_gcm, Key, IV, {AAD, Plain}),
+        EncryptedData = marshal_edf(#edf{
+            version = Version,
+            key_version = KeyVer,
+            iv = IV,
+            aad = AAD,
+            cipher = Cipher,
+            tag = Tag}),
+        {ok, EncryptedData}
+    catch error:badarg ->
+        {error, {encryption_failed, wrong_data_type}}
+    end.
+
+-spec encrypt(secret_keys(), binary(), encryption_params()) ->
+    {ok, binary()} |
+    {error, {encryption_failed, wrong_data_type}}.
+
+encrypt(#{encryption_key := {KeyVer, Key}}, Plain, EncryptionParams) ->
+    IV = iv(EncryptionParams),
+    AAD = aad(EncryptionParams),
+    Version = get_version(EncryptionParams),
     try
         {Cipher, Tag} = crypto:block_encrypt(aes_gcm, Key, IV, {AAD, Plain}),
         EncryptedData = marshal_edf(#edf{
@@ -95,6 +137,19 @@ decrypt(SecretKeys, MarshalledEDF) ->
 
 %%% Internal functions
 
+-spec get_version() ->
+    version().
+
+get_version() ->
+    <<"edf_v1">>.
+
+-spec get_version(encryption_params()) ->
+    version().
+
+get_version(#{version := Version}) ->
+    Version.
+
+
 -spec get_key(key_version(), secret_keys()) -> key().
 
 get_key(KeyVer, #{decryption_key := Keys}) ->
@@ -110,10 +165,20 @@ get_key(KeyVer, #{decryption_key := Keys}) ->
 iv() ->
     crypto:strong_rand_bytes(16).
 
+-spec iv(encryption_params()) -> iv().
+
+iv(#{iv := IV}) ->
+    IV.
+
 -spec aad() -> aad().
 
 aad() ->
     crypto:strong_rand_bytes(4).
+
+-spec aad(encryption_params()) -> aad().
+
+aad(#{aad := AAD}) ->
+    AAD.
 
 -spec marshal_edf(edf()) -> binary().
 
@@ -131,7 +196,7 @@ marshal_edf(#edf{version = Ver, key_version = KeyVer, tag = Tag, iv = IV, aad = 
 unmarshal_edf(<<Ver:6/binary, KeyVer:32/integer, Tag:16/binary, IV:16/binary, AAD:4/binary, Cipher/binary>>)
 when Ver =:= <<"edf_v1">> ->
     #edf{
-        version = <<"edf_v1">>,
+        version = get_version(),
         tag = Tag,
         iv = IV,
         aad = AAD,

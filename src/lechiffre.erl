@@ -25,6 +25,9 @@
 
 -type thrift_type()     :: lechiffre_thrift_utils:thrift_type().
 
+-type encryption_params() :: lechiffre_crypto:encryption_params().
+
+-export_type([encryption_params/0]).
 -export_type([secret_keys/0]).
 -export_type([encoding_error/0]).
 -export_type([decoding_error/0]).
@@ -43,6 +46,8 @@
 -export([encode/3]).
 -export([decode/2]).
 -export([decode/3]).
+-export([encode_with_params/3]).
+-export([get_encryption_params/0]).
 
 -spec child_spec(atom(), options()) ->
     supervisor:child_spec().
@@ -60,6 +65,12 @@ child_spec(ChildId, Options) ->
 
 start_link(Options) ->
     gen_server:start_link(?MODULE, Options, []).
+
+-spec get_encryption_params() ->
+    lechiffre_crypto:encryption_params().
+
+get_encryption_params() ->
+    lechiffre_crypto:get_encryption_params().
 
 -spec encode(thrift_type(), data()) ->
     {ok, encoded_data()} |
@@ -82,6 +93,19 @@ encode(ThriftType, Data, SecretKeys) ->
     case lechiffre_thrift_utils:serialize(ThriftType, Data) of
         {ok, ThriftBin}    ->
             lechiffre_crypto:encrypt(SecretKeys, ThriftBin);
+        {error, _} = Error ->
+            {error, {serialization_failed, Error}}
+    end.
+
+-spec encode_with_params(thrift_type(), data(), encryption_params()) ->
+    {ok, encoded_data()} |
+    {error, encoding_error()}.
+
+encode_with_params(ThriftType, Data, EncryptionParams) ->
+    SecretKeys = lookup_secret_value(),
+    case lechiffre_thrift_utils:serialize(ThriftType, Data) of
+        {ok, ThriftBin} ->
+            lechiffre_crypto:encrypt(SecretKeys, ThriftBin, EncryptionParams);
         {error, _} = Error ->
             {error, {serialization_failed, Error}}
     end.
