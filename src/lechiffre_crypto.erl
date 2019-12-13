@@ -67,23 +67,9 @@ get_encryption_params() ->
     {ok, binary()} |
     {error, {encryption_failed, wrong_data_type}}.
 
-encrypt(#{encryption_key := {KeyVer, Key}}, Plain) ->
-    IV = iv(),
-    AAD = aad(),
-    Version = get_version(),
-    try
-        {Cipher, Tag} = crypto:block_encrypt(aes_gcm, Key, IV, {AAD, Plain}),
-        EncryptedData = marshal_edf(#edf{
-            version = Version,
-            key_version = KeyVer,
-            iv = IV,
-            aad = AAD,
-            cipher = Cipher,
-            tag = Tag}),
-        {ok, EncryptedData}
-    catch error:badarg ->
-        {error, {encryption_failed, wrong_data_type}}
-    end.
+encrypt(SecretKeys, Plain) ->
+    EncryptionParams = get_encryption_params(),
+    encrypt(SecretKeys, Plain, EncryptionParams).
 
 -spec encrypt(secret_keys(), binary(), encryption_params()) ->
     {ok, binary()} |
