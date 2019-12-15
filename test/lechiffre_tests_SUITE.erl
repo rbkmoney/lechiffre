@@ -23,7 +23,8 @@
     unknown_decrypt_key_test/1,
     wrong_key_test/1,
     wrong_encrypted_key_format_test/1,
-    encrypt_hide_secret_key_ok_test/1
+    encrypt_hide_secret_key_ok_test/1,
+    encode_with_params_ok_test/1
 ]).
 
 -type config() :: [{atom(), term()}].
@@ -36,7 +37,8 @@ all() ->
         unknown_decrypt_key_test,
         wrong_key_test,
         wrong_encrypted_key_format_test,
-        encrypt_hide_secret_key_ok_test
+        encrypt_hide_secret_key_ok_test,
+        encode_with_params_ok_test
     ].
 
 -spec groups() ->
@@ -66,14 +68,26 @@ end_per_suite(_C) ->
 -spec init_per_testcase(atom(), config()) ->
     config().
 
-init_per_testcase(_Name, C) ->
-    C.
+init_per_testcase(_Name, Config) ->
+    Filename = <<"secret_key_1.file">>,
+    Options = #{
+        encryption_key_path => {1, get_source(Filename, Config)},
+        decryption_key_path => #{
+            1 => get_source(Filename, Config)
+        }
+    },
+    ChildSpec = lechiffre:child_spec(lechiffre, Options),
+    {ok, SupPid} = genlib_adhoc_supervisor:start_link({one_for_all, 0, 1}, [ChildSpec]),
+    _ = unlink(SupPid),
+    Config ++ [{sup_pid, SupPid}].
 
 -spec end_per_testcase(atom(), config()) ->
     config().
 
-end_per_testcase(_Name, _C) ->
-    ok.
+end_per_testcase(_Name, Config) ->
+    {_, SupPid} = lists:keyfind(sup_pid, 1, Config),
+    exit(SupPid, shutdown),
+    Config.
 
 -spec get_source(binary(), config()) ->
     binary().
@@ -87,18 +101,10 @@ get_source(FileName, Config) ->
 -spec unknown_decrypt_key_test(config()) -> ok.
 -spec wrong_key_test(config()) -> ok.
 -spec wrong_encrypted_key_format_test(config()) -> ok.
+-spec encode_with_params_ok_test(config()) -> ok.
 
-encrypt_hide_secret_key_ok_test(Config) ->
-    Filename = <<"secret_key_1.file">>,
-    Options = #{
-        encryption_key_path => {1, get_source(Filename, Config)},
-        decryption_key_path => #{
-            1 => get_source(Filename, Config)
-        }
-    },
-    lechiffre:start_link(Options),
+encrypt_hide_secret_key_ok_test(_Config) ->
     {ThriftType, PaymentToolToken} = payment_tool_token(),
-
     {ok, EncryptedToken} = lechiffre:encode(ThriftType, PaymentToolToken),
     {ok, Value} = lechiffre:decode(ThriftType, EncryptedToken),
     ?assertEqual(PaymentToolToken, Value).
@@ -141,12 +147,20 @@ wrong_encrypted_key_format_test(_Config) ->
     ?assertEqual({error, {decryption_failed, bad_encrypted_data_format}}, ErrorDecode).
 
 -spec payment_tool_token() -> {term(), term()}.
+
 payment_tool_token() ->
     Type = {struct, struct, {?MODULE, 'BankCard'}},
     Token = #'BankCard'{
         token = <<"TOKEN">>
     },
     {Type, Token}.
+
+encode_with_params_ok_test(_Config) ->
+    {ThriftType, PaymentToolToken} = payment_tool_token(),
+    EncryptionParams = lechiffre:get_encryption_params(),
+    {ok, EncryptedToken} = lechiffre:encode_with_params(ThriftType, PaymentToolToken, EncryptionParams),
+    {ok, Value} = lechiffre:decode(ThriftType, EncryptedToken),
+    ?assertEqual(PaymentToolToken, Value).
 
 %% For Thrift compile
 

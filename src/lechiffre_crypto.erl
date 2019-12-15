@@ -12,7 +12,9 @@
     decryption_key := decryption_keys()
 }.
 
--opaque encryption_params() :: #{
+-type encryption_params() :: binary().
+
+-type params() :: #{
     version := version(),
     iv      := iv(),
     aad     := aad()
@@ -57,11 +59,11 @@
     encryption_params().
 
 get_encryption_params() ->
-    #{
+    decode_params(#{
         version => get_version(),
         iv      => iv(),
         aad     => aad()
-    }.
+    }).
 
 -spec encrypt(secret_keys(), binary()) ->
     {ok, binary()} |
@@ -76,9 +78,10 @@ encrypt(SecretKeys, Plain) ->
     {error, {encryption_failed, wrong_data_type}}.
 
 encrypt(#{encryption_key := {KeyVer, Key}}, Plain, EncryptionParams) ->
-    IV = iv(EncryptionParams),
-    AAD = aad(EncryptionParams),
-    Version = get_version(EncryptionParams),
+    Params = encode_params(EncryptionParams),
+    Version = get_version(Params),
+    IV = iv(Params),
+    AAD = aad(Params),
     try
         {Cipher, Tag} = crypto:block_encrypt(aes_gcm, Key, IV, {AAD, Plain}),
         EncryptedData = marshal_edf(#edf{
@@ -165,6 +168,27 @@ aad() ->
 
 aad(#{aad := AAD}) ->
     AAD.
+
+-spec decode_params(params()) ->
+    encryption_params().
+
+decode_params(Params) ->
+    #{
+        version := Ver,
+        iv := IV,
+        aad := AAD
+    } = Params,
+    <<Ver/binary, IV/binary, AAD/binary>>.
+
+-spec encode_params(encryption_params()) ->
+    params().
+
+encode_params(<<Ver:6/binary, IV:16/binary, AAD:4/binary>>) ->
+    #{
+        version => Ver,
+        iv => IV,
+        aad => AAD
+    }.
 
 -spec marshal_edf(edf()) -> binary().
 
