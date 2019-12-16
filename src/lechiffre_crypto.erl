@@ -44,6 +44,7 @@
 -export_type([decryption_error/0]).
 -export_type([secret_keys/0]).
 -export_type([key_version/0]).
+-export_type([key/0]).
 
 -export([get_encryption_params/0]).
 -export([encrypt/2]).
@@ -51,6 +52,7 @@
 -export([decrypt/2]).
 -export([iv/0]).
 -export([aad/0]).
+-export([encryption_key/1]).
 
 -spec get_encryption_params() ->
     encryption_params().
@@ -59,6 +61,12 @@ get_encryption_params() ->
     #{
         iv => iv()
     }.
+
+-spec encryption_key(secret_keys()) ->
+    {key_version(), key()}.
+
+encryption_key(#{encryption_key := EncryptionKey}) ->
+    EncryptionKey.
 
 -spec encrypt(secret_keys(), binary()) ->
     {ok, binary()} |

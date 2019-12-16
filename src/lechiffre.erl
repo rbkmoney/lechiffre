@@ -12,6 +12,7 @@
 }.
 
 -type key_path()        :: binary().
+-type key()             :: lechiffre_crypto:key().
 -type key_version()     :: lechiffre_crypto:key_version().
 -type secret_keys()     :: lechiffre_crypto:secret_keys().
 -type data()            :: term().
@@ -47,6 +48,7 @@
 -export([decode/2]).
 -export([decode/3]).
 -export([encode_with_params/3]).
+-export([get_encryption_key/0]).
 
 -spec child_spec(atom(), options()) ->
     supervisor:child_spec().
@@ -64,6 +66,13 @@ child_spec(ChildId, Options) ->
 
 start_link(Options) ->
     gen_server:start_link(?MODULE, Options, []).
+
+-spec get_encryption_key() ->
+    {key_version(), key()}.
+
+get_encryption_key() ->
+    SecretKeys = lookup_secret_value(),
+    lechiffre_crypto:encryption_key(SecretKeys).
 
 -spec encode(thrift_type(), data()) ->
     {ok, encoded_data()} |
