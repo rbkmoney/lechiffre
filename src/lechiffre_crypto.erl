@@ -12,12 +12,8 @@
     decryption_key := decryption_keys()
 }.
 
--type encryption_params() :: binary().
-
--type params() :: #{
-    version := version(),
-    iv      := iv(),
-    aad     := aad()
+-type encryption_params() :: #{
+    iv := iv()
 }.
 
 -type iv()      :: binary().
@@ -27,7 +23,6 @@
 
 %% Encrypted Data Format
 -record(edf, {
-    version     :: version(),
     tag         :: tag(),
     iv          :: iv(),
     aad         :: aad(),
@@ -54,16 +49,16 @@
 -export([encrypt/2]).
 -export([encrypt/3]).
 -export([decrypt/2]).
+-export([iv/0]).
+-export([aad/0]).
 
 -spec get_encryption_params() ->
     encryption_params().
 
 get_encryption_params() ->
-    decode_params(#{
-        version => get_version(),
-        iv      => iv(),
-        aad     => aad()
-    }).
+    #{
+        iv => iv()
+    }.
 
 -spec encrypt(secret_keys(), binary()) ->
     {ok, binary()} |
@@ -78,14 +73,11 @@ encrypt(SecretKeys, Plain) ->
     {error, {encryption_failed, wrong_data_type}}.
 
 encrypt(#{encryption_key := {KeyVer, Key}}, Plain, EncryptionParams) ->
-    Params = encode_params(EncryptionParams),
-    Version = get_version(Params),
-    IV = iv(Params),
-    AAD = aad(Params),
+    IV = iv(EncryptionParams),
+    AAD = encode_aad(KeyVer),
     try
         {Cipher, Tag} = crypto:block_encrypt(aes_gcm, Key, IV, {AAD, Plain}),
         EncryptedData = marshal_edf(#edf{
-            version = Version,
             key_version = KeyVer,
             iv = IV,
             aad = AAD,
@@ -107,7 +99,8 @@ decrypt(SecretKeys, MarshalledEDF) ->
             aad = AAD,
             cipher = Cipher,
             tag = Tag,
-            key_version = KeyVer} = unmarshal_edf(MarshalledEDF),
+            key_version = KeyVer
+        } = unmarshal_edf(MarshalledEDF),
         Key = get_key(KeyVer, SecretKeys),
         crypto:block_decrypt(aes_gcm, Key, IV, {AAD, Cipher, Tag})
     of
@@ -131,13 +124,6 @@ decrypt(SecretKeys, MarshalledEDF) ->
 
 get_version() ->
     <<"edf_v1">>.
-
--spec get_version(encryption_params()) ->
-    version().
-
-get_version(#{version := Version}) ->
-    Version.
-
 
 -spec get_key(key_version(), secret_keys()) -> key().
 
@@ -164,54 +150,42 @@ iv(#{iv := IV}) ->
 aad() ->
     crypto:strong_rand_bytes(4).
 
--spec aad(encryption_params()) -> aad().
+-spec encode_aad(key_version()) -> aad().
 
-aad(#{aad := AAD}) ->
-    AAD.
+encode_aad(KeyVer)
+when KeyVer > 0 andalso KeyVer < ?MAX_UINT_32 -> %% max value unsinged integer 4 byte
+    FormatVersion = get_version(),
+    <<FormatVersion:6/binary, KeyVer:32/integer>>.
 
--spec decode_params(params()) ->
-    encryption_params().
 
-decode_params(Params) ->
-    #{
-        version := Ver,
-        iv := IV,
-        aad := AAD
-    } = Params,
-    <<Ver/binary, IV/binary, AAD/binary>>.
+-spec decode_aad(aad()) -> {version(), key_version()}.
 
--spec encode_params(encryption_params()) ->
-    params().
+decode_aad(<<FormatVersion:6/binary, KeyVer:32/integer>>) ->
+    {FormatVersion, KeyVer}.
 
-encode_params(<<Ver:6/binary, IV:16/binary, AAD:4/binary>>) ->
-    #{
-        version => Ver,
-        iv => IV,
-        aad => AAD
-    }.
 
 -spec marshal_edf(edf()) -> binary().
 
-marshal_edf(#edf{version = Ver, key_version = KeyVer, tag = Tag, iv = IV, aad = AAD, cipher = Cipher})
+marshal_edf(#edf{tag = Tag, iv = IV, aad = AAD, cipher = Cipher})
     when
-        KeyVer > 0 andalso KeyVer < ?MAX_UINT_32, %% max value unsinged integer 4 byte
         bit_size(Tag) =:= 128,
         bit_size(IV) =:= 128,
-        bit_size(AAD) =:= 32
+        bit_size(AAD) =:= 80
     ->
-        <<Ver:6/binary, KeyVer:32/integer, Tag:16/binary, IV:16/binary, AAD:4/binary, Cipher/binary>>.
+        <<Tag:16/binary, IV:16/binary, AAD:10/binary, Cipher/binary>>.
 
 -spec unmarshal_edf(binary()) -> edf().
 
-unmarshal_edf(<<Ver:6/binary, KeyVer:32/integer, Tag:16/binary, IV:16/binary, AAD:4/binary, Cipher/binary>>)
-when Ver =:= <<"edf_v1">> ->
-    #edf{
-        version = get_version(),
-        tag = Tag,
-        iv = IV,
-        aad = AAD,
-        cipher = Cipher,
-        key_version = KeyVer
-    };
-unmarshal_edf(_Other) ->
-    throw(bad_encrypted_data_format).
+unmarshal_edf(<<Tag:16/binary, IV:16/binary, AAD:10/binary, Cipher/binary>>) ->
+    case decode_aad(AAD) of
+        {<<"edf_v1">>, KeyVer} ->
+            #edf{
+                key_version = KeyVer,
+                tag = Tag,
+                iv = IV,
+                aad = AAD,
+                cipher = Cipher
+            };
+        _ ->
+           throw(bad_encrypted_data_format)
+    end.

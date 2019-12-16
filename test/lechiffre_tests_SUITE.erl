@@ -141,8 +141,8 @@ wrong_encrypted_key_format_test(_Config) ->
         decryption_key => #{1 => WrongKey}
     },
     {ok, EncryptedToken} = lechiffre:encode(ThriftType, PaymentToolToken, SecretKey),
-    <<_Format:6/binary, Tail/binary>> = EncryptedToken,
-    BadEncryptedToken = <<"edf_v2", Tail/binary>>,
+    <<Tag:16/binary, IV:16/binary, _Format:6/binary, Tail/binary>>= EncryptedToken,
+    BadEncryptedToken = <<Tag/binary, IV/binary, "edf_v2", Tail/binary>>,
     ErrorDecode = lechiffre:decode(ThriftType, BadEncryptedToken, SecretKey),
     ?assertEqual({error, {decryption_failed, bad_encrypted_data_format}}, ErrorDecode).
 
@@ -157,7 +157,7 @@ payment_tool_token() ->
 
 encode_with_params_ok_test(_Config) ->
     {ThriftType, PaymentToolToken} = payment_tool_token(),
-    EncryptionParams = lechiffre:get_encryption_params(),
+    EncryptionParams = lechiffre_crypto:get_encryption_params(),
     {ok, EncryptedToken} = lechiffre:encode_with_params(ThriftType, PaymentToolToken, EncryptionParams),
     {ok, Value} = lechiffre:decode(ThriftType, EncryptedToken),
     ?assertEqual(PaymentToolToken, Value).

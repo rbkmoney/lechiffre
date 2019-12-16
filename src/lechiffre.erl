@@ -47,7 +47,6 @@
 -export([decode/2]).
 -export([decode/3]).
 -export([encode_with_params/3]).
--export([get_encryption_params/0]).
 
 -spec child_spec(atom(), options()) ->
     supervisor:child_spec().
@@ -65,12 +64,6 @@ child_spec(ChildId, Options) ->
 
 start_link(Options) ->
     gen_server:start_link(?MODULE, Options, []).
-
--spec get_encryption_params() ->
-    lechiffre_crypto:encryption_params().
-
-get_encryption_params() ->
-    lechiffre_crypto:get_encryption_params().
 
 -spec encode(thrift_type(), data()) ->
     {ok, encoded_data()} |
