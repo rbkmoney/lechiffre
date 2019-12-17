@@ -45,12 +45,14 @@
 -export_type([secret_keys/0]).
 -export_type([key_version/0]).
 -export_type([key/0]).
+-export_type([iv/0]).
 
 -export([get_encryption_params/0]).
 -export([encrypt/2]).
 -export([encrypt/3]).
 -export([decrypt/2]).
--export([iv/0]).
+-export([iv_random/0]).
+-export([iv_hash/2]).
 -export([aad/0]).
 -export([encryption_key/1]).
 
@@ -59,8 +61,19 @@
 
 get_encryption_params() ->
     #{
-        iv => iv()
+        iv => iv_random()
     }.
+
+-spec iv_hash(key(), binary()) -> iv().
+
+iv_hash(EncryptionKey, Value) ->
+    Type = sha256,
+    crypto:hmac(Type, EncryptionKey, Value, 16).
+
+-spec iv_random() -> iv().
+
+iv_random() ->
+    crypto:strong_rand_bytes(16).
 
 -spec encryption_key(secret_keys()) ->
     {key_version(), key()}.
@@ -143,11 +156,6 @@ get_key(KeyVer, #{decryption_key := Keys}) ->
             throw({unknown_key_version, KeyVer})
     end.
 
--spec iv() -> iv().
-
-iv() ->
-    crypto:strong_rand_bytes(16).
-
 -spec iv(encryption_params()) -> iv().
 
 iv(#{iv := IV}) ->
@@ -176,9 +184,9 @@ decode_aad(<<FormatVersion:6/binary, KeyVer:32/integer>>) ->
 
 marshal_edf(#edf{tag = Tag, iv = IV, aad = AAD, cipher = Cipher})
     when
-        bit_size(Tag) =:= 128,
-        bit_size(IV) =:= 128,
-        bit_size(AAD) =:= 80
+        byte_size(Tag) =:= 16,
+        byte_size(IV)  =:= 16,
+        byte_size(AAD) =:= 10
     ->
         <<Tag:16/binary, IV:16/binary, AAD:10/binary, Cipher/binary>>.
 
@@ -196,4 +204,6 @@ unmarshal_edf(<<Tag:16/binary, IV:16/binary, AAD:10/binary, Cipher/binary>>) ->
             };
         _ ->
            throw(bad_encrypted_data_format)
-    end.
+    end;
+unmarshal_edf(_) ->
+    throw(bad_encrypted_data_format).

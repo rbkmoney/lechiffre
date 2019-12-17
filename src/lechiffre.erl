@@ -12,17 +12,16 @@
 }.
 
 -type key_path()        :: binary().
--type key()             :: lechiffre_crypto:key().
 -type key_version()     :: lechiffre_crypto:key_version().
 -type secret_keys()     :: lechiffre_crypto:secret_keys().
 -type data()            :: term().
 -type encoded_data()    :: binary().
 
--type encoding_error()  :: {encryption_failed, lechiffre_crypto:encryption_error()} |
-                           lechiffre_thrift_utils:thrift_error().
+-type encoding_error()  :: lechiffre_thrift_utils:serialize_error() |
+                           {encryption_failed, lechiffre_crypto:encryption_error()}.
 
 -type decoding_error()  :: {decryption_failed, lechiffre_crypto:decryption_error()} |
-                           lechiffre_thrift_utils:thrift_error().
+                           lechiffre_thrift_utils:deserialize_error().
 
 -type thrift_type()     :: lechiffre_thrift_utils:thrift_type().
 
@@ -45,10 +44,10 @@
 
 -export([encode/2]).
 -export([encode/3]).
+-export([encode/4]).
 -export([decode/2]).
 -export([decode/3]).
--export([encode_with_params/3]).
--export([get_encryption_key/0]).
+-export([create_iv/1]).
 
 -spec child_spec(atom(), options()) ->
     supervisor:child_spec().
@@ -67,49 +66,42 @@ child_spec(ChildId, Options) ->
 start_link(Options) ->
     gen_server:start_link(?MODULE, Options, []).
 
--spec get_encryption_key() ->
-    {key_version(), key()}.
+-spec create_iv(binary()) ->
+    lechiffre_crypto:iv().
 
-get_encryption_key() ->
+create_iv(Value) ->
     SecretKeys = lookup_secret_value(),
-    lechiffre_crypto:encryption_key(SecretKeys).
+    {_, EncryptionKey} = maps:get(encryption_key, SecretKeys),
+    lechiffre_crypto:iv_hash(EncryptionKey, Value).
 
 -spec encode(thrift_type(), data()) ->
     {ok, encoded_data()} |
     {error, encoding_error()}.
 
 encode(ThriftType, Data) ->
-    SecretKeys = lookup_secret_value(),
-    case lechiffre_thrift_utils:serialize(ThriftType, Data) of
-        {ok, ThriftBin} ->
-            lechiffre_crypto:encrypt(SecretKeys, ThriftBin);
-        {error, _} = Error ->
-            {error, {serialization_failed, Error}}
-    end.
+    EncryptionParams = #{
+        iv => lechiffre_crypto:iv_random()
+    },
+    encode(ThriftType, Data, EncryptionParams).
 
--spec encode(thrift_type(), data(), secret_keys()) ->
+-spec encode(thrift_type(), data(), encryption_params()) ->
     {ok, encoded_data()} |
     {error, encoding_error()}.
 
-encode(ThriftType, Data, SecretKeys) ->
-    case lechiffre_thrift_utils:serialize(ThriftType, Data) of
-        {ok, ThriftBin}    ->
-            lechiffre_crypto:encrypt(SecretKeys, ThriftBin);
-        {error, _} = Error ->
-            {error, {serialization_failed, Error}}
-    end.
+encode(ThriftType, Data, EncryptionParams) ->
+    SecretKeys = lookup_secret_value(),
+    encode(ThriftType, Data, EncryptionParams, SecretKeys).
 
--spec encode_with_params(thrift_type(), data(), encryption_params()) ->
+-spec encode(thrift_type(), data(), encryption_params(), secret_keys()) ->
     {ok, encoded_data()} |
     {error, encoding_error()}.
 
-encode_with_params(ThriftType, Data, EncryptionParams) ->
-    SecretKeys = lookup_secret_value(),
+encode(ThriftType, Data, EncryptionParams, SecretKeys) ->
     case lechiffre_thrift_utils:serialize(ThriftType, Data) of
         {ok, ThriftBin} ->
             lechiffre_crypto:encrypt(SecretKeys, ThriftBin, EncryptionParams);
-        {error, _} = Error ->
-            {error, {serialization_failed, Error}}
+        {error, _} = SerializationError ->
+            SerializationError
     end.
 
 -spec decode(thrift_type(), encoded_data()) ->
