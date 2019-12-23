@@ -5,15 +5,18 @@
 -behaviour(gen_server).
 
 -type options() :: #{
-    encryption_key_path := {key_version(), key_path()},
-    decryption_key_path := #{
-        key_version() := key_path()
-    }
+    encryption_key_path := {key_path(), key_password_path()},
+    decryption_key_path := [
+        {key_path(), key_password_path()}
+    ]
 }.
 
--type key_path()        :: binary().
--type key_version()     :: lechiffre_crypto:key_version().
--type secret_keys()     :: lechiffre_crypto:secret_keys().
+-type key_path()          :: binary().
+-type key_password_path() :: binary().
+-type secret_keys() :: #{
+    encryption_key  := lechiffre_crypto:jwk(),
+    decryption_keys := lechiffre_crypto:decryption_keys()
+}.
 -type data()            :: term().
 -type encoded_data()    :: binary().
 
@@ -33,8 +36,8 @@
 -export_type([decoding_error/0]).
 
 %% GenServer
--export([child_spec/2]).
--export([start_link/1]).
+-export([child_spec /2]).
+-export([start_link /1]).
 -export([init       /1]).
 -export([handle_call/3]).
 -export([handle_cast/2]).
@@ -47,7 +50,8 @@
 -export([encode/4]).
 -export([decode/2]).
 -export([decode/3]).
--export([create_iv/1]).
+-export([compute_iv/1]).
+-export([read_secret_keys/1]).
 
 -spec child_spec(atom(), options()) ->
     supervisor:child_spec().
@@ -66,13 +70,51 @@ child_spec(ChildId, Options) ->
 start_link(Options) ->
     gen_server:start_link(?MODULE, Options, []).
 
--spec create_iv(binary()) ->
+-spec read_secret_keys(options()) -> secret_keys().
+
+read_secret_keys(Options) ->
+    EncryptionPath = maps:get(encryption_key_path, Options),
+    DecryptionKeysPath = maps:get(decryption_key_path, Options),
+    DecryptionKeys = lists:foldl(fun(DecryptionPath, Acc) ->
+        {Kid, Jwk} = read_key_file(DecryptionPath),
+        add_jwk(Acc, Kid, Jwk)
+    end, #{}, DecryptionKeysPath),
+    {_, EncryptionKey} = read_key_file(EncryptionPath),
+    #{
+        encryption_key  => EncryptionKey,
+        decryption_keys => DecryptionKeys
+    }.
+
+-spec verify_jwk(lechiffre_crypto:jwk(), key_path()) ->
+    ok.
+
+verify_jwk(Jwk, Path) ->
+    case lechiffre_crypto:verify_jwk_alg(Jwk) of
+        {wrong_jwk_alg, Alg} ->
+            throw({wrong_jwk_alg, {Alg, Path}});
+        ok ->
+            ok
+    end.
+
+-spec get_jwk_kid(lechiffre_crypto:jwk(), key_path()) ->
+    lechiffre_crypto:kid().
+
+get_jwk_kid(Jwk, Path) ->
+    case lechiffre_crypto:get_jwk_kid(Jwk) of
+        notfound ->
+            throw({wrong_jwk, {kid_notfound, Path}});
+        Kid ->
+            Kid
+    end.
+
+
+-spec compute_iv(binary()) ->
     lechiffre_crypto:iv().
 
-create_iv(Value) ->
+compute_iv(Nonce) ->
     SecretKeys = lookup_secret_value(),
-    {_, EncryptionKey} = maps:get(encryption_key, SecretKeys),
-    lechiffre_crypto:iv_hash(EncryptionKey, Value).
+    EncryptionKey = maps:get(encryption_key, SecretKeys),
+    lechiffre_crypto:compute_iv_hash(EncryptionKey, Nonce).
 
 -spec encode(thrift_type(), data()) ->
     {ok, encoded_data()} |
@@ -80,7 +122,7 @@ create_iv(Value) ->
 
 encode(ThriftType, Data) ->
     EncryptionParams = #{
-        iv => lechiffre_crypto:iv_random()
+        iv => lechiffre_crypto:compute_random_iv()
     },
     encode(ThriftType, Data, EncryptionParams).
 
@@ -99,7 +141,8 @@ encode(ThriftType, Data, EncryptionParams) ->
 encode(ThriftType, Data, EncryptionParams, SecretKeys) ->
     case lechiffre_thrift_utils:serialize(ThriftType, Data) of
         {ok, ThriftBin} ->
-            lechiffre_crypto:encrypt(SecretKeys, ThriftBin, EncryptionParams);
+            EncryptionKey = maps:get(encryption_key, SecretKeys),
+            lechiffre_crypto:encrypt(EncryptionKey, ThriftBin, EncryptionParams);
         {error, _} = SerializationError ->
             SerializationError
     end.
@@ -110,7 +153,8 @@ encode(ThriftType, Data, EncryptionParams, SecretKeys) ->
 
 decode(ThriftType, EncryptedData) ->
     SecretKeys = lookup_secret_value(),
-    case lechiffre_crypto:decrypt(SecretKeys, EncryptedData) of
+    DecryptionKeys = maps:get(decryption_keys, SecretKeys),
+    case lechiffre_crypto:decrypt(DecryptionKeys, EncryptedData) of
         {ok, ThriftBin} ->
             lechiffre_thrift_utils:deserialize(ThriftType, ThriftBin);
         DecryptError ->
@@ -122,7 +166,8 @@ decode(ThriftType, EncryptedData) ->
     {error, decoding_error()}.
 
 decode(ThriftType, EncryptedData, SecretKeys) ->
-    case lechiffre_crypto:decrypt(SecretKeys, EncryptedData) of
+    DecryptionKeys = maps:get(decryption_keys, SecretKeys),
+    case lechiffre_crypto:decrypt(DecryptionKeys, EncryptedData) of
         {ok, ThriftBin} ->
             lechiffre_thrift_utils:deserialize(ThriftType, ThriftBin);
         DecryptError ->
@@ -178,28 +223,16 @@ code_change(_OldVsn, State, _Extra) ->
 
 %%
 
--spec read_secret_keys(options()) -> secret_keys().
+-spec read_key_file({key_path(), key_password_path()}) ->
+    {lechiffre_crypto:kid(), lechiffre_crypto:jwk()}.
 
-read_secret_keys(Options) ->
-    {Ver, EncryptionPath} = maps:get(encryption_key_path, Options),
-    DecryptionKeysPath = maps:get(decryption_key_path, Options),
-    DecryptionKeys = maps:fold(fun(KeyVer, Path, Acc) ->
-        SecretKey = read_key_file(Path),
-        Acc#{
-            KeyVer => SecretKey
-        }
-        end, #{}, DecryptionKeysPath),
-    EncryptionKey = read_key_file(EncryptionPath),
-    #{
-        encryption_key => {Ver, EncryptionKey},
-        decryption_key => DecryptionKeys
-    }.
-
--spec read_key_file(binary()) -> binary().
-
-read_key_file(SecretPath) ->
-    {ok, Secret} = file:read_file(SecretPath),
-    genlib_string:trim(Secret).
+read_key_file({KeyPath, KeyPassPath}) ->
+    {ok, KeyPass} = file:read_file(KeyPassPath),
+    Password = genlib_string:trim(KeyPass),
+    {_Jwe, Jwk} = jose_jwk:from_file(Password, KeyPath),
+    ok = verify_jwk(Jwk, KeyPath),
+    Kid = get_jwk_kid(Jwk, KeyPath),
+    {Kid, Jwk}.
 
 -spec create_table(secret_keys()) -> ok.
 
@@ -219,3 +252,14 @@ insert_secret_value(SecretKeys) ->
 lookup_secret_value() ->
     [{secret, SecretKeys}] = ets:lookup(?SECRET_KEYS_TABLE, secret),
     SecretKeys.
+
+-spec add_jwk(map(), binary(), lechiffre_crypto:jwk()) ->
+    map().
+
+add_jwk(Map, KID, JWK) ->
+    case maps:is_key(KID, Map) of
+        true ->
+            throw({jwk_kid_duplicated, KID});
+        false ->
+            maps:put(KID, JWK, Map)
+    end.

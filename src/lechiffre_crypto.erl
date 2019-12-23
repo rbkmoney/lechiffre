@@ -1,209 +1,162 @@
 -module(lechiffre_crypto).
 
--define(MAX_UINT_32, 4294967295).
+-include_lib("jose/include/jose_jwk.hrl").
 
--type key_version() :: 1..?MAX_UINT_32.
--type key() :: <<_:256>>.
+-type kid()         :: binary().
+-type jwk()         :: #jose_jwk{}.
+-type iv()          :: binary().
+-type jwe()         :: map().
+-type jwe_compact() :: binary().
+
 -type decryption_keys() :: #{
-    key_version() := key()
+    kid() := jwk()
 }.
--type secret_keys() :: #{
-    encryption_key := {key_version(), key()},
-    decryption_key := decryption_keys()
-}.
-
 -type encryption_params() :: #{
     iv := iv()
 }.
-
--type iv()      :: binary().
--type tag()     :: binary().
--type aad()     :: binary().
--type version() :: binary().
-
-%% Encrypted Data Format
--record(edf, {
-    tag         :: tag(),
-    iv          :: iv(),
-    aad         :: aad(),
-    cipher      :: binary(),
-    key_version :: key_version()
-}).
--type edf() :: #edf{}.
-
--type decryption_error() :: {decryption_failed, decryption_validation_failed |
-                                                bad_encrypted_data_format |
-                                                wrong_data_type |
-                                                {unknown_key_version, key_version()}
-                                            }.
--type encryption_error() :: {encryption_failed, wrong_data_type}.
+-type decryption_error() :: {decryption_failed,
+    wrong_jwk |
+    {unknown_kid, kid()} |
+    {bad_jwe_header_format, _Reason} |
+    {expand_jwe_failed, _JweCompact} |
+    _Reason
+}.
+-type encryption_error() :: {encryption_failed, _Reason}.
 
 -export_type([encryption_params/0]).
 -export_type([decryption_keys/0]).
 -export_type([encryption_error/0]).
 -export_type([decryption_error/0]).
--export_type([secret_keys/0]).
--export_type([key_version/0]).
--export_type([key/0]).
+-export_type([kid/0]).
 -export_type([iv/0]).
+-export_type([jwk/0]).
 
--export([get_encryption_params/0]).
 -export([encrypt/2]).
 -export([encrypt/3]).
 -export([decrypt/2]).
--export([iv_random/0]).
--export([iv_hash/2]).
--export([aad/0]).
--export([encryption_key/1]).
+-export([get_jwe_kid/1]).
+-export([get_jwk_kid/1]).
+-export([verify_jwk_alg/1]).
+-export([compute_random_iv/0]).
+-export([compute_iv_hash/2]).
 
--spec get_encryption_params() ->
-    encryption_params().
+-spec compute_iv_hash(jwk(), binary()) -> iv().
 
-get_encryption_params() ->
-    #{
-        iv => iv_random()
-    }.
-
--spec iv_hash(key(), binary()) -> iv().
-
-iv_hash(EncryptionKey, Value) ->
+compute_iv_hash(Jwk, Nonce) ->
     Type = sha256,
-    crypto:hmac(Type, EncryptionKey, Value, 16).
+    JwkBin = erlang:term_to_binary(Jwk),
+    crypto:hmac(Type, JwkBin, Nonce, 16).
 
--spec iv_random() -> iv().
+-spec compute_random_iv() -> iv().
 
-iv_random() ->
+compute_random_iv() ->
     crypto:strong_rand_bytes(16).
 
--spec encryption_key(secret_keys()) ->
-    {key_version(), key()}.
 
-encryption_key(#{encryption_key := EncryptionKey}) ->
-    EncryptionKey.
-
--spec encrypt(secret_keys(), binary()) ->
+-spec encrypt(jwk(), binary()) ->
     {ok, binary()} |
     {error, {encryption_failed, wrong_data_type}}.
 
-encrypt(SecretKeys, Plain) ->
-    EncryptionParams = get_encryption_params(),
-    encrypt(SecretKeys, Plain, EncryptionParams).
+encrypt(Key, Plain) ->
+    EncryptionParams = #{
+        iv => compute_random_iv()
+    },
+    encrypt(Key, Plain, EncryptionParams).
 
--spec encrypt(secret_keys(), binary(), encryption_params()) ->
-    {ok, binary()} |
-    {error, {encryption_failed, wrong_data_type}}.
+-spec encrypt(jwk(), binary(), encryption_params()) ->
+    {ok, jwe_compact()} |
+    {error, {encryption_failed, _Reason}}.
 
-encrypt(#{encryption_key := {KeyVer, Key}}, Plain, EncryptionParams) ->
+encrypt(JWK, Plain, EncryptionParams) ->
     IV = iv(EncryptionParams),
-    AAD = encode_aad(KeyVer),
-    try
-        {Cipher, Tag} = crypto:block_encrypt(aes_gcm, Key, IV, {AAD, Plain}),
-        EncryptedData = marshal_edf(#edf{
-            key_version = KeyVer,
-            iv = IV,
-            aad = AAD,
-            cipher = Cipher,
-            tag = Tag}),
-        {ok, EncryptedData}
-    catch error:badarg ->
-        {error, {encryption_failed, wrong_data_type}}
-    end.
+    % try
+        #{<<"kid">> := KID} = JWK#jose_jwk.fields,
+        EncryptorWithoutKid = jose_jwk:block_encryptor(JWK),
+        JWE = EncryptorWithoutKid#{<<"kid">> => KID},
+        {CEK, JWE1} = jose_jwe:next_cek(JWK, JWE),
+        {_, EncBlock} = jose_jwe:block_encrypt(JWK, Plain, CEK, IV, JWE1),
+        {#{}, Compact} = jose_jwe:compact(EncBlock),
+        {ok, Compact}.
+    % catch _Type:Error ->
+    %     {error, {encryption_failed, Error}}
+    % end.
 
--spec decrypt(secret_keys(), binary()) ->
+-spec decrypt(decryption_keys(), jwe_compact()) ->
     {ok, binary()} |
     {error, decryption_error()}.
 
-decrypt(SecretKeys, MarshalledEDF) ->
+decrypt(SecretKeys, JweCompact) ->
     try
-        #edf{
-            iv = IV,
-            aad = AAD,
-            cipher = Cipher,
-            tag = Tag,
-            key_version = KeyVer
-        } = unmarshal_edf(MarshalledEDF),
-        Key = get_key(KeyVer, SecretKeys),
-        crypto:block_decrypt(aes_gcm, Key, IV, {AAD, Cipher, Tag})
-    of
-        error ->
-            {error, {decryption_failed, decryption_validation_failed}};
-        Plain ->
-            {ok, Plain}
-    catch
-        throw:bad_encrypted_data_format ->
-            {error, {decryption_failed, bad_encrypted_data_format}};
-        throw:{unknown_key_version, Ver} ->
-            {error, {decryption_failed, {unknown_key_version, Ver}}};
-        error:badarg ->
-            {error, {decryption_failed, wrong_data_type}}
+        Jwe = expand_jwe(JweCompact),
+        Kid = get_jwe_kid(Jwe),
+        Jwk = get_key(Kid, SecretKeys),
+        case jose_jwe:block_decrypt(Jwk, Jwe) of
+            {error, _JWE} ->
+               {error, {decryption_failed, wrong_jwk}};
+            {DecryptedData, _JWE} ->
+                {ok, DecryptedData}
+        end
+    catch _Type:Error ->
+        {error, {decryption_failed, Error}}
     end.
 
 %%% Internal functions
 
--spec get_version() ->
-    version().
+-spec expand_jwe(jwe_compact()) ->
+    jwe().
 
-get_version() ->
-    <<"edf_v1">>.
+expand_jwe(JweCompact) ->
+    try
+        {#{}, Jwe} = jose_jwe:expand(JweCompact),
+        Jwe
+    catch _Type:_Error ->
+        throw({expand_jwe_failed, JweCompact})
+    end.
 
--spec get_key(key_version(), secret_keys()) -> key().
+-spec get_jwe_kid(jwe()) ->
+    kid().
 
-get_key(KeyVer, #{decryption_key := Keys}) ->
-    case maps:find(KeyVer, Keys) of
+get_jwe_kid(#{<<"protected">> := EncHeader}) ->
+    try
+        HeaderJson = base64url:decode(EncHeader),
+        Header = jsx:decode(HeaderJson, [return_maps]),
+        maps:get(<<"kid">>, Header)
+    catch _Type:Error ->
+        throw({bad_jwe_header_format, Error})
+    end.
+
+-spec get_jwk_kid(jwk()) -> kid() | notfound.
+
+get_jwk_kid(Jwk) ->
+    Fields = Jwk#jose_jwk.fields,
+    maps:get(<<"kid">>, Fields, notfound).
+
+-spec verify_jwk_alg(jwk()) ->  ok | {wrong_jwk_alg, _}.
+
+verify_jwk_alg(JWK) ->
+    Fields = JWK#jose_jwk.fields,
+    case maps:get(<<"alg">>, Fields, notfound) of
+        <<"dir">> ->
+            ok;
+        <<"A256KW">> ->
+            ok;
+        <<"A256GCMKW">> ->
+            ok;
+        Alg ->
+            {wrong_jwk_alg, Alg}
+    end.
+
+-spec get_key(kid(), decryption_keys()) -> jwk().
+
+get_key(KID, Keys) ->
+    case maps:find(KID, Keys) of
         {ok, Key} ->
             Key;
         error ->
-            throw({unknown_key_version, KeyVer})
+            throw({kid_notfound, KID})
     end.
 
 -spec iv(encryption_params()) -> iv().
 
 iv(#{iv := IV}) ->
     IV.
-
--spec aad() -> aad().
-
-aad() ->
-    crypto:strong_rand_bytes(4).
-
--spec encode_aad(key_version()) -> aad().
-
-encode_aad(KeyVer)
-when KeyVer > 0 andalso KeyVer < ?MAX_UINT_32 -> %% max value unsinged integer 4 byte
-    FormatVersion = get_version(),
-    <<FormatVersion:6/binary, KeyVer:32/integer>>.
-
-
--spec decode_aad(aad()) -> {version(), key_version()}.
-
-decode_aad(<<FormatVersion:6/binary, KeyVer:32/integer>>) ->
-    {FormatVersion, KeyVer}.
-
-
--spec marshal_edf(edf()) -> binary().
-
-marshal_edf(#edf{tag = Tag, iv = IV, aad = AAD, cipher = Cipher})
-    when
-        byte_size(Tag) =:= 16,
-        byte_size(IV)  =:= 16,
-        byte_size(AAD) =:= 10
-    ->
-        <<Tag:16/binary, IV:16/binary, AAD:10/binary, Cipher/binary>>.
-
--spec unmarshal_edf(binary()) -> edf().
-
-unmarshal_edf(<<Tag:16/binary, IV:16/binary, AAD:10/binary, Cipher/binary>>) ->
-    case decode_aad(AAD) of
-        {<<"edf_v1">>, KeyVer} ->
-            #edf{
-                key_version = KeyVer,
-                tag = Tag,
-                iv = IV,
-                aad = AAD,
-                cipher = Cipher
-            };
-        _ ->
-           throw(bad_encrypted_data_format)
-    end;
-unmarshal_edf(_) ->
-    throw(bad_encrypted_data_format).

@@ -3,6 +3,9 @@
 -include_lib("common_test/include/ct.hrl").
 -include_lib("eunit/include/eunit.hrl").
 
+-include_lib("jose/include/jose_jwk.hrl").
+-include_lib("jose/include/jose_jws.hrl").
+
 -record('BankCard', {
     token :: binary()
 }).
@@ -24,7 +27,12 @@
     wrong_key_test/1,
     wrong_encrypted_key_format_test/1,
     encrypt_hide_secret_key_ok_test/1,
-    encode_with_params_ok_test/1
+    encode_with_params_ok_test/1,
+
+    lechiffre_crypto_encode_ok_test/1,
+    lechiffre_crypto_decode_ok_test/1,
+    lechiffre_init_jwk_ok_test/1,
+    lechiffre_init_jwk_no_kid_test/1
 ]).
 
 -type config() :: [{atom(), term()}].
@@ -38,7 +46,11 @@ all() ->
         wrong_key_test,
         wrong_encrypted_key_format_test,
         encrypt_hide_secret_key_ok_test,
-        encode_with_params_ok_test
+        encode_with_params_ok_test,
+        lechiffre_crypto_encode_ok_test,
+        lechiffre_crypto_decode_ok_test,
+        lechiffre_init_jwk_ok_test,
+        lechiffre_init_jwk_no_kid_test
     ].
 
 -spec groups() ->
@@ -69,12 +81,16 @@ end_per_suite(_C) ->
     config().
 
 init_per_testcase(_Name, Config) ->
-    Filename = <<"secret_key_1.file">>,
+    File1 = <<"jwk1.json">>,
+    File2 = <<"jwk2.json">>,
+    Password1 = <<"jwk.password">>,
+    Password2 = <<"jwk.password">>,
     Options = #{
-        encryption_key_path => {1, get_source(Filename, Config)},
-        decryption_key_path => #{
-            1 => get_source(Filename, Config)
-        }
+        encryption_key_path => {get_source(File1, Config), get_source(Password1, Config)},
+        decryption_key_path => [
+            {get_source(File1, Config), get_source(Password1, Config)},
+            {get_source(File2, Config), get_source(Password2, Config)}
+        ]
     },
     ChildSpec = lechiffre:child_spec(lechiffre, Options),
     {ok, SupPid} = genlib_adhoc_supervisor:start_link({one_for_all, 0, 1}, [ChildSpec]),
@@ -103,51 +119,122 @@ get_source(FileName, Config) ->
 -spec wrong_encrypted_key_format_test(config()) -> ok.
 -spec encode_with_params_ok_test(config()) -> ok.
 
+-spec lechiffre_crypto_encode_ok_test(config()) -> ok.
+-spec lechiffre_crypto_decode_ok_test(config()) -> ok.
+-spec lechiffre_init_jwk_ok_test(config()) -> ok.
+-spec lechiffre_init_jwk_no_kid_test(config()) -> ok.
+
 encrypt_hide_secret_key_ok_test(_Config) ->
     {ThriftType, PaymentToolToken} = payment_tool_token(),
     {ok, EncryptedToken} = lechiffre:encode(ThriftType, PaymentToolToken),
     {ok, Value} = lechiffre:decode(ThriftType, EncryptedToken),
     ?assertEqual(PaymentToolToken, Value).
 
-unknown_decrypt_key_test(_Config) ->
+unknown_decrypt_key_test(Config) ->
+    File1 = <<"jwk1.json">>,
+    File2 = <<"jwk2.json">>,
+    Password = <<"jwk.password">>,
+    Options = #{
+        encryption_key_path => {get_source(File2, Config), get_source(Password, Config)},
+        decryption_key_path => [
+            {get_source(File1, Config), get_source(Password, Config)}
+        ]
+    },
     {ThriftType, PaymentToolToken} = payment_tool_token(),
-    Key = crypto:strong_rand_bytes(32),
-    EncryptionParams = #{iv => lechiffre_crypto:iv_random()},
-    SecretKey = #{
-        encryption_key => {1, Key},
-        decryption_key => #{2 => Key}
-    },
-    {ok, EncryptedToken} = lechiffre:encode(ThriftType, PaymentToolToken, EncryptionParams, SecretKey),
-    ErrorDecode = lechiffre:decode(ThriftType, EncryptedToken, SecretKey),
-    ?assertEqual({error, {decryption_failed, {unknown_key_version, 1}}}, ErrorDecode).
+    EncryptionParams = #{iv => lechiffre_crypto:compute_random_iv()},
+    SecretKeys = lechiffre:read_secret_keys(Options),
+    {ok, EncryptedToken} = lechiffre:encode(ThriftType, PaymentToolToken, EncryptionParams, SecretKeys),
+    ErrorDecode = lechiffre:decode(ThriftType, EncryptedToken, SecretKeys),
+    ?assertEqual({error, {decryption_failed, {kid_notfound, <<"222">>}}}, ErrorDecode).
 
-wrong_key_test(_Config) ->
-   {ThriftType, PaymentToolToken} = payment_tool_token(),
-    Key = crypto:strong_rand_bytes(32),
-    WrongKey = crypto:strong_rand_bytes(32),
-    EncryptionParams = #{iv => lechiffre_crypto:iv_random()},
-    SecretKey = #{
-        encryption_key => {1, Key},
-        decryption_key => #{1 => WrongKey}
+wrong_key_test(Config) ->
+    File1 = <<"jwk2.json">>,
+    File2 = <<"jwk3.json">>,
+    Password = <<"jwk.password">>,
+    Options = #{
+        encryption_key_path => {get_source(File1, Config), get_source(Password, Config)},
+        decryption_key_path => [
+            {get_source(File2, Config), get_source(Password, Config)}
+        ]
     },
-    {ok, EncryptedToken} = lechiffre:encode(ThriftType, PaymentToolToken, EncryptionParams, SecretKey),
-    ErrorDecode = lechiffre:decode(ThriftType, EncryptedToken, SecretKey),
-    ?assertEqual({error, {decryption_failed, decryption_validation_failed}}, ErrorDecode).
-
-wrong_encrypted_key_format_test(_Config) ->
+    SecretKeys = lechiffre:read_secret_keys(Options),
     {ThriftType, PaymentToolToken} = payment_tool_token(),
-    Key = crypto:strong_rand_bytes(32),
-    WrongKey = crypto:strong_rand_bytes(32),
-    EncryptionParams = #{iv => lechiffre_crypto:iv_random()},
-    SecretKey = #{
-        encryption_key => {1, Key},
-        decryption_key => #{1 => WrongKey}
+    EncryptionParams = #{iv => lechiffre_crypto:compute_random_iv()},
+
+    {ok, EncryptedToken} = lechiffre:encode(ThriftType, PaymentToolToken, EncryptionParams, SecretKeys),
+    ErrorDecode = lechiffre:decode(ThriftType, EncryptedToken, SecretKeys),
+    ?assertEqual({error, {decryption_failed, wrong_jwk}}, ErrorDecode).
+
+wrong_encrypted_key_format_test(Config) ->
+    {ThriftType, _PaymentToolToken} = payment_tool_token(),
+    Header = crypto:strong_rand_bytes(32),
+    Body = crypto:strong_rand_bytes(32),
+    EncryptedToken = <<Header/binary, ".", Body/binary>>,
+    File1 = <<"jwk2.json">>,
+    File2 = <<"jwk3.json">>,
+    Password = <<"jwk.password">>,
+    Options = #{
+        encryption_key_path => {get_source(File1, Config), get_source(Password, Config)},
+        decryption_key_path => [
+            {get_source(File2, Config), get_source(Password, Config)}
+        ]
     },
-    {ok, EncryptedToken} = lechiffre:encode(ThriftType, PaymentToolToken, EncryptionParams, SecretKey),
-    <<Tag:16/binary, IV:16/binary, _Format:6/binary, Tail/binary>>= EncryptedToken,
-    BadEncryptedToken = <<Tag/binary, IV/binary, "edf_v2", Tail/binary>>,
-    ErrorDecode = lechiffre:decode(ThriftType, BadEncryptedToken, SecretKey),
-    ?assertEqual({error, {decryption_failed, bad_encrypted_data_format}}, ErrorDecode).
+    SecretKeys = lechiffre:read_secret_keys(Options),
+    ErrorDecode = lechiffre:decode(ThriftType, EncryptedToken, SecretKeys),
+    ?assertMatch({error, {decryption_failed, {expand_jwe_failed, _Jwe}}}, ErrorDecode).
+
+lechiffre_crypto_encode_ok_test(_Config) ->
+    KID = <<"123">>,
+    Plain = <<"bukabjaka">>,
+    K = crypto:strong_rand_bytes(32),
+    JWK = jose_jwk:from(#{
+        <<"kty">> => <<"oct">>,
+        <<"kid">> => KID,
+        <<"k">> => base64url:encode(K)
+    }),
+    EncryptionParams = #{
+        iv => crypto:strong_rand_bytes(16)
+    },
+    {ok, EncBlock} = lechiffre_crypto:encrypt(JWK, Plain, EncryptionParams),
+    {ok, EncBlock} = lechiffre_crypto:encrypt(JWK, Plain, EncryptionParams).
+
+lechiffre_crypto_decode_ok_test(_Config) ->
+    KID = <<"123">>,
+    Plain = <<"bukabjaka">>,
+    K = crypto:strong_rand_bytes(32),
+    JWK = jose_jwk:from(#{
+        <<"kty">> => <<"oct">>,
+        <<"kid">> => KID,
+        <<"k">> => base64url:encode(K)
+    }),
+    EncryptionParams = #{
+        iv => crypto:strong_rand_bytes(16)
+    },
+    {ok, EncBlock} = lechiffre_crypto:encrypt(JWK, Plain, EncryptionParams),
+    {ok, Plain} = lechiffre_crypto:decrypt(#{KID => JWK}, EncBlock).
+
+lechiffre_init_jwk_ok_test(_Config) ->
+    {ThriftType, PaymentToolToken} = payment_tool_token(),
+    Nonce = <<"idemp_key">>,
+    EncryptionParams = #{iv => lechiffre:compute_iv(Nonce)},
+    {ok, EncryptedToken} = lechiffre:encode(ThriftType, PaymentToolToken, EncryptionParams),
+    {ok, EncryptedToken} = lechiffre:encode(ThriftType, PaymentToolToken, EncryptionParams),
+    {ok, PaymentToolToken} = lechiffre:decode(ThriftType, EncryptedToken).
+
+lechiffre_init_jwk_no_kid_test(Config) ->
+    File1 = <<"jwk4.json">>,
+    Password1 = <<"jwk.password">>,
+    Options = #{
+        encryption_key_path => {get_source(File1, Config), get_source(Password1, Config)},
+        decryption_key_path => [
+            {get_source(File1, Config), get_source(Password1, Config)}
+        ]
+    },
+    try
+        lechiffre:read_secret_keys(Options)
+    catch _Type:Error ->
+        ?assertMatch({wrong_jwk, {kid_notfound, _}}, Error)
+    end.
 
 -spec payment_tool_token() -> {term(), term()}.
 
@@ -160,7 +247,7 @@ payment_tool_token() ->
 
 encode_with_params_ok_test(_Config) ->
     {ThriftType, PaymentToolToken} = payment_tool_token(),
-    EncryptionParams = lechiffre_crypto:get_encryption_params(),
+    EncryptionParams = #{iv => lechiffre_crypto:compute_random_iv()},
     {ok, EncryptedToken} = lechiffre:encode(ThriftType, PaymentToolToken, EncryptionParams),
     {ok, Value} = lechiffre:decode(ThriftType, EncryptedToken),
     ?assertEqual(PaymentToolToken, Value).
