@@ -83,13 +83,12 @@ end_per_suite(_C) ->
 init_per_testcase(_Name, Config) ->
     File1 = <<"jwk1.json">>,
     File2 = <<"jwk2.json">>,
-    Password1 = <<"jwk.password">>,
-    Password2 = <<"jwk.password">>,
+    Password = <<"jwk.password">>,
     Options = #{
-        encryption_key_path => {get_source(File1, Config), get_source(Password1, Config)},
-        decryption_key_path => [
-            {get_source(File1, Config), get_source(Password1, Config)},
-            {get_source(File2, Config), get_source(Password2, Config)}
+        encryption_key_path => {get_source(File1, Config), get_source(Password, Config)},
+        decryption_key_paths => [
+            {get_source(File1, Config), get_source(Password, Config)},
+            {get_source(File2, Config), get_source(Password, Config)}
         ]
     },
     ChildSpec = lechiffre:child_spec(lechiffre, Options),
@@ -136,7 +135,7 @@ unknown_decrypt_key_test(Config) ->
     Password = <<"jwk.password">>,
     Options = #{
         encryption_key_path => {get_source(File2, Config), get_source(Password, Config)},
-        decryption_key_path => [
+        decryption_key_paths => [
             {get_source(File1, Config), get_source(Password, Config)}
         ]
     },
@@ -153,7 +152,7 @@ wrong_key_test(Config) ->
     Password = <<"jwk.password">>,
     Options = #{
         encryption_key_path => {get_source(File1, Config), get_source(Password, Config)},
-        decryption_key_path => [
+        decryption_key_paths => [
             {get_source(File2, Config), get_source(Password, Config)}
         ]
     },
@@ -175,7 +174,7 @@ wrong_encrypted_key_format_test(Config) ->
     Password = <<"jwk.password">>,
     Options = #{
         encryption_key_path => {get_source(File1, Config), get_source(Password, Config)},
-        decryption_key_path => [
+        decryption_key_paths => [
             {get_source(File2, Config), get_source(Password, Config)}
         ]
     },
@@ -226,14 +225,14 @@ lechiffre_init_jwk_no_kid_test(Config) ->
     Password1 = <<"jwk.password">>,
     Options = #{
         encryption_key_path => {get_source(File1, Config), get_source(Password1, Config)},
-        decryption_key_path => [
+        decryption_key_paths => [
             {get_source(File1, Config), get_source(Password1, Config)}
         ]
     },
     try
         lechiffre:read_secret_keys(Options)
     catch _Type:Error ->
-        ?assertMatch({wrong_jwk, {kid_notfound, _}}, Error)
+        ?assertMatch({invalid_jwk, _Path, missing_kid}, Error)
     end.
 
 -spec payment_tool_token() -> {term(), term()}.
