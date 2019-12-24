@@ -4,7 +4,6 @@
 -include_lib("eunit/include/eunit.hrl").
 
 -include_lib("jose/include/jose_jwk.hrl").
--include_lib("jose/include/jose_jws.hrl").
 
 -record('BankCard', {
     token :: binary()
