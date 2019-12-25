@@ -179,7 +179,7 @@ wrong_encrypted_key_format_test(Config) ->
     },
     SecretKeys = lechiffre:read_secret_keys(Options),
     ErrorDecode = lechiffre:decode(ThriftType, EncryptedToken, SecretKeys),
-    ?assertMatch({error, {decryption_failed, {expand_jwe_failed, _Jwe}}}, ErrorDecode).
+    ?assertMatch({error, {decryption_failed, {bad_jwe_format, _Jwe}}}, ErrorDecode).
 
 lechiffre_crypto_encode_ok_test(_Config) ->
     KID = <<"123">>,

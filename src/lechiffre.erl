@@ -18,7 +18,7 @@
     decryption_keys := lechiffre_crypto:decryption_keys()
 }.
 -type data()            :: term().
--type encoded_data()    :: binary().
+-type encoded_data()    :: lechiffre_crypto:jwe_compact().
 
 -type encoding_error()  :: lechiffre_crypto:encryption_error() |
                            lechiffre_thrift_utils:serialization_error().
@@ -200,7 +200,7 @@ read_decryption_keys(Paths) ->
             {Kid, Jwk} = read_key_file(Path),
             add_jwk(Kid, Jwk, Acc)
         catch throw:{?MODULE, Reason} ->
-            throw({invalid_jwk, Path, Reason})
+            error({invalid_jwk, Path, Reason})
         end
     end, #{}, Paths).
 
@@ -212,7 +212,7 @@ read_encryption_key(Path) ->
         {_, EncryptionKey} = read_key_file(Path),
         EncryptionKey
     catch throw:{?MODULE, Reason} ->
-        throw({invalid_jwk, Path, Reason})
+        error({invalid_jwk, Path, Reason})
     end.
 
 -spec read_key_file({key_path(), key_password_path()}) ->
@@ -233,7 +233,7 @@ read_file_password(Path) ->
         {ok, Binary} ->
             Binary;
         {error, Reason} ->
-            throw({?MODULE, {read_file_password, Reason}})
+            throw({?MODULE, {password_file_read_failed, Reason}})
     end,
     genlib_string:trim(Password).
 
@@ -244,8 +244,8 @@ verify_jwk(Jwk) ->
     case lechiffre_crypto:verify_jwk_alg(Jwk) of
         ok ->
             ok;
-        {error, {wrong_jwk_alg, Alg}} ->
-            throw({?MODULE, {wrong_jwk_alg, Alg}})
+        {error, {jwk_alg_unsupported, Alg}} ->
+            throw({?MODULE, {jwk_alg_unsupported, Alg}})
     end.
 
 -spec get_jwk_kid(lechiffre_crypto:jwk()) ->

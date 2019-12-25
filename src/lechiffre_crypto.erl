@@ -17,11 +17,10 @@
     iv := iv()
 }.
 -type decryption_error() :: {decryption_failed,
-    wrong_jwk |
     unknown |
     {kid_notfound, kid()} |
     {bad_jwe_header_format, _Reason} |
-    {expand_jwe_failed, _JweCompact}
+    {bad_jwe_format, _JweCompact}
 }.
 -type encryption_error() :: {encryption_failed, {invalid_jwk, encryption_unsupported}}.
 
@@ -29,6 +28,7 @@
 -export_type([decryption_keys/0]).
 -export_type([encryption_error/0]).
 -export_type([decryption_error/0]).
+-export_type([jwe_compact/0]).
 -export_type([kid/0]).
 -export_type([iv/0]).
 -export_type([jwk/0]).
@@ -101,7 +101,7 @@ expand_jwe(JweCompact) ->
         {#{}, Jwe} = jose_jwe:expand(JweCompact),
         Jwe
     catch _Type:_Error ->
-        throw({?MODULE, {expand_jwe_failed, JweCompact}})
+        throw({?MODULE, {bad_jwe_format, JweCompact}})
     end.
 
 -spec get_jwe_kid(jwe()) ->
@@ -122,7 +122,7 @@ get_jwk_kid(Jwk) ->
     Fields = Jwk#jose_jwk.fields,
     maps:get(<<"kid">>, Fields, notfound).
 
--spec verify_jwk_alg(jwk()) ->  ok | {error, {wrong_jwk_alg, _}}.
+-spec verify_jwk_alg(jwk()) ->  ok | {error, {jwk_alg_unsupported, _}}.
 %% WARNING: remove this code when deterministic behaviour no matter
 verify_jwk_alg(JWK) ->
     Fields = JWK#jose_jwk.fields,
@@ -134,7 +134,7 @@ verify_jwk_alg(JWK) ->
         <<"A256GCMKW">> ->
             ok;
         Alg ->
-            {error, {wrong_jwk_alg, Alg}}
+            {error, {jwk_alg_unsupported, Alg}}
     end.
 
 -spec get_key(kid(), decryption_keys()) ->
