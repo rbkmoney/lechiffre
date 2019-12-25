@@ -161,7 +161,7 @@ wrong_key_test(Config) ->
 
     {ok, EncryptedToken} = lechiffre:encode(ThriftType, PaymentToolToken, EncryptionParams, SecretKeys),
     ErrorDecode = lechiffre:decode(ThriftType, EncryptedToken, SecretKeys),
-    ?assertEqual({error, {decryption_failed, wrong_jwk}}, ErrorDecode).
+    ?assertEqual({error, {decryption_failed, unknown}}, ErrorDecode).
 
 wrong_encrypted_key_format_test(Config) ->
     {ThriftType, _PaymentToolToken} = payment_tool_token(),

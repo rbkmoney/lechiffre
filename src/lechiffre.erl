@@ -21,10 +21,10 @@
 -type encoded_data()    :: binary().
 
 -type encoding_error()  :: lechiffre_crypto:encryption_error() |
-                           lechiffre_thrift_utils:serialize_error().
+                           lechiffre_thrift_utils:serialization_error().
 
 -type decoding_error()  :: lechiffre_crypto:decryption_error() |
-                           lechiffre_thrift_utils:deserialize_error().
+                           lechiffre_thrift_utils:deserialization_error().
 
 -type thrift_type()     :: lechiffre_thrift_utils:thrift_type().
 
@@ -192,20 +192,20 @@ code_change(_OldVsn, State, _Extra) ->
 %% Internal
 
 -spec read_decryption_keys([{key_path(), key_password_path()}]) ->
-    lechiffre_crypto:decryption_keys().
+    lechiffre_crypto:decryption_keys() | no_return().
 
 read_decryption_keys(Paths) ->
-    lists:foldl(fun(DecryptionPath, Acc) ->
+    lists:foldl(fun(Path, Acc) ->
         try
-            {Kid, Jwk} = read_key_file(DecryptionPath),
+            {Kid, Jwk} = read_key_file(Path),
             add_jwk(Kid, Jwk, Acc)
         catch throw:{?MODULE, Reason} ->
-            throw({invalid_jwk, DecryptionPath, Reason})
+            throw({invalid_jwk, Path, Reason})
         end
     end, #{}, Paths).
 
 -spec read_encryption_key({key_path(), key_password_path()}) ->
-    lechiffre_crypto:jwk().
+    lechiffre_crypto:jwk() | no_return().
 
 read_encryption_key(Path) ->
     try
@@ -219,62 +219,53 @@ read_encryption_key(Path) ->
     {lechiffre_crypto:kid(), lechiffre_crypto:jwk()}.
 
 read_key_file({KeyPath, KeyPassPath}) ->
-    try
-        Password = read_file_password(KeyPassPath),
-        {_Jwe, Jwk} = jose_jwk:from_file(Password, KeyPath),
-        ok = verify_jwk(Jwk),
-        Kid = get_jwk_kid(Jwk),
-        {Kid, Jwk}
-    catch
-        throw:{read_file_password, _} = Reason ->
-            throw({?MODULE, Reason});
-        throw:{wrong_jwk_alg, _} = Reason ->
-            throw({?MODULE, Reason});
-        throw:missing_kid ->
-            throw({?MODULE, missing_kid})
-    end.
+    Password = read_file_password(KeyPassPath),
+    {_Jwe, Jwk} = jose_jwk:from_file(Password, KeyPath),
+    ok = verify_jwk(Jwk),
+    Kid = get_jwk_kid(Jwk),
+    {Kid, Jwk}.
 
 -spec read_file_password(key_password_path()) ->
-    binary().
+    binary() | no_return().
 
 read_file_password(Path) ->
     Password = case file:read_file(Path) of
         {ok, Binary} ->
             Binary;
         {error, Reason} ->
-            throw({read_file_password, Reason})
+            throw({?MODULE, {read_file_password, Reason}})
     end,
     genlib_string:trim(Password).
 
 -spec verify_jwk(lechiffre_crypto:jwk()) ->
-    ok.
+    ok | no_return().
 
 verify_jwk(Jwk) ->
     case lechiffre_crypto:verify_jwk_alg(Jwk) of
         ok ->
             ok;
         {error, {wrong_jwk_alg, Alg}} ->
-            throw({wrong_jwk_alg, Alg})
+            throw({?MODULE, {wrong_jwk_alg, Alg}})
     end.
 
 -spec get_jwk_kid(lechiffre_crypto:jwk()) ->
-    lechiffre_crypto:kid().
+    lechiffre_crypto:kid() | no_return().
 
 get_jwk_kid(Jwk) ->
     case lechiffre_crypto:get_jwk_kid(Jwk) of
         notfound ->
-            throw(missing_kid);
+            throw({?MODULE, missing_kid});
         Kid ->
             Kid
     end.
 
 -spec add_jwk(binary(), lechiffre_crypto:jwk(), map()) ->
-    map().
+    map() | no_return().
 
 add_jwk(KID, JWK, Map) ->
     case maps:is_key(KID, Map) of
         true ->
-            throw({duplicate_kid, KID});
+            throw({duplicate_jwk_kid, KID});
         false ->
             maps:put(KID, JWK, Map)
     end.
