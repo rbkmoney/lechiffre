@@ -5,17 +5,22 @@
 -define(IV_SIZE, 16).
 
 -type kid()         :: binary().
--type jwk()         :: #jose_jwk{}.
+-type jwk()         :: {kty(), jose_jwk:key()}.
 -type iv()          :: binary().
 -type jwe()         :: map().
--type jwe_compact() :: binary().
+-type jwe_compact() :: ascii_string().
+-type alg_enc()     :: binary().
+-type kty()         :: oct | ec | rsa | okt.
+-type key_source()  :: binary() |
+                       {json_file, file:filename_all()}.
+
+%% base62 string and '.'
+-type ascii_string() :: binary().
 
 -type decryption_keys() :: #{
     kid() := jwk()
 }.
--type encryption_params() :: #{
-    iv := iv()
-}.
+
 -type decryption_error() :: {decryption_failed,
     unknown |
     {kid_notfound, kid()} |
@@ -24,7 +29,6 @@
 }.
 -type encryption_error() :: {encryption_failed, {invalid_jwk, encryption_unsupported}}.
 
--export_type([encryption_params/0]).
 -export_type([decryption_keys/0]).
 -export_type([encryption_error/0]).
 -export_type([decryption_error/0]).
@@ -32,40 +36,56 @@
 -export_type([kid/0]).
 -export_type([iv/0]).
 -export_type([jwk/0]).
+-export_type([key_source/0]).
+-export_type([alg_enc/0]).
 
--export([encrypt/3]).
+-export([encrypt/2]).
 -export([decrypt/2]).
 -export([get_jwe_kid/1]).
 -export([get_jwk_kid/1]).
+-export([get_jwk_alg/1]).
+-export([read_jwk/1]).
 -export([verify_jwk_alg/1]).
 -export([compute_random_iv/0]).
--export([compute_iv_hash/2]).
-
--spec compute_iv_hash(jwk(), binary()) -> iv().
-%% WARNING: remove this code when deterministic behaviour no matter
-compute_iv_hash(Jwk, Nonce) ->
-    Type = sha256,
-    JwkBin = erlang:term_to_binary(Jwk),
-    crypto:hmac(Type, JwkBin, Nonce, ?IV_SIZE).
 
 -spec compute_random_iv() -> iv().
 
 compute_random_iv() ->
-    crypto:strong_rand_bytes(16).
+    crypto:strong_rand_bytes(?IV_SIZE).
 
--spec encrypt(jwk(), binary(), encryption_params()) ->
+-spec read_jwk(key_source()) -> jwk().
+
+read_jwk(Source) when is_binary(Source) ->
+    Jwk = jose_jwk:from_binary(Source),
+    Kty = get_jwk_kty(Jwk),
+    {Kty, Jwk};
+read_jwk({json_file, Source}) ->
+    Jwk = jose_jwk:from_file(Source),
+    Kty = get_jwk_kty(Jwk),
+    {Kty, Jwk}.
+
+-spec encrypt(jwk(), binary()) ->
     {ok, jwe_compact()} |
     {error, encryption_error()}.
 
-encrypt(JWK, Plain, EncryptionParams) ->
-    IV = iv(EncryptionParams),
+encrypt({Type, Jwk}, Plain) ->
     try
-        #{<<"kid">> := KID} = JWK#jose_jwk.fields,
-        EncryptorWithoutKid = unwrap({invalid_jwk, encryption_unsupported}, fun() -> jose_jwk:block_encryptor(JWK) end),
-        JWE = EncryptorWithoutKid#{<<"kid">> => KID},
-        {CEK, JWE1} = jose_jwe:next_cek(JWK, JWE),
-        {_, JWE2} = jose_jwe:block_encrypt(JWK, Plain, CEK, IV, JWE1),
-        {#{}, Compact} = jose_jwe:compact(JWE2),
+        #{<<"kid">> := KID} = Jwk#jose_jwk.fields,
+        EncryptorWithoutKid = unwrap(
+            {invalid_jwk, encryption_unsupported},
+            fun() -> jose_jwk:block_encryptor(Jwk) end
+        ),
+        Encryptor = EncryptorWithoutKid#{<<"kid">> => KID},
+        Result = case Type of
+            ec ->
+                KeyPriv = jose_jwk:generate_key(Jwk),
+                Jwe = jose_jwk:box_encrypt(Plain, Encryptor, Jwk, KeyPriv),
+                Jwe;
+            oct ->
+                {_, Jwe} = jose_jwe:block_encrypt(Jwk, Plain, Encryptor),
+                Jwe
+        end,
+        {#{}, Compact} = jose_jwe:compact(Result),
         {ok, Compact}
     catch throw:{?MODULE, Error} ->
         {error, {encryption_failed, Error}}
@@ -79,9 +99,8 @@ decrypt(SecretKeys, JweCompact) ->
     try
         Jwe = expand_jwe(JweCompact),
         Kid = get_jwe_kid(Jwe),
-        Jwk = get_key(Kid, SecretKeys),
-        Result = jose_jwe:block_decrypt(Jwk, Jwe),
-        case Result of
+        {_, Jwk} = get_key(Kid, SecretKeys),
+        case jose_jwe:block_decrypt(Jwk, Jwe) of
             {error, _JWE} ->
                {error, {decryption_failed, unknown}};
             {DecryptedData, _JWE} ->
@@ -118,23 +137,41 @@ get_jwe_kid(#{<<"protected">> := EncHeader}) ->
 
 -spec get_jwk_kid(jwk()) -> kid() | notfound.
 
-get_jwk_kid(Jwk) ->
+get_jwk_kid({_, Jwk}) ->
     Fields = Jwk#jose_jwk.fields,
     maps:get(<<"kid">>, Fields, notfound).
 
--spec verify_jwk_alg(jwk()) ->  ok | {error, {jwk_alg_unsupported, _}}.
-%% WARNING: remove this code when deterministic behaviour no matter
-verify_jwk_alg(JWK) ->
-    Fields = JWK#jose_jwk.fields,
-    case maps:get(<<"alg">>, Fields, notfound) of
-        <<"dir">> ->
+-spec get_jwk_alg(jwk()) -> alg_enc() | notfound.
+
+get_jwk_alg({_, Jwk}) ->
+    Fields = Jwk#jose_jwk.fields,
+    maps:get(<<"alg">>, Fields, notfound).
+
+-spec get_jwk_kty(jose_jwk:key()) -> kty().
+
+get_jwk_kty(Jwk) ->
+    case jose_jwk:to_map(Jwk) of
+        {_, #{<<"kty">> := <<"EC">>}} ->
+            ec;
+        {_, #{<<"kty">> := <<"oct">>}} ->
+            oct;
+        {_, #{<<"kty">> := <<"RSA">>}} ->
+            rsa;
+        {_, #{<<"kty">> := <<"OKT">>}} ->
+            okt
+    end.
+
+-spec verify_jwk_alg(alg_enc()) ->
+    ok |
+    {error, {jwk_alg_unsupported, alg_enc(), [alg_enc()]}}.
+
+verify_jwk_alg(AlgEnc) ->
+    {jwe, {alg, AlgList}, _, _} = lists:keyfind(jwe, 1, jose_jwa:supports()),
+    case lists:member(AlgEnc, AlgList) of
+        true ->
             ok;
-        <<"A256KW">> ->
-            ok;
-        <<"A256GCMKW">> ->
-            ok;
-        Alg ->
-            {error, {jwk_alg_unsupported, Alg}}
+        false ->
+            {error, {jwk_alg_unsupported, AlgEnc, AlgList}}
     end.
 
 -spec get_key(kid(), decryption_keys()) ->
@@ -147,11 +184,6 @@ get_key(KID, Keys) ->
         error ->
             throw({?MODULE, {kid_notfound, KID}})
     end.
-
--spec iv(encryption_params()) -> iv().
-
-iv(#{iv := IV}) ->
-    IV.
 
 -spec unwrap(_, _) ->
     _ | no_return().
