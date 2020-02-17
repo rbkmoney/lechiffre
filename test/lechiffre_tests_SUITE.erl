@@ -3,8 +3,6 @@
 -include_lib("common_test/include/ct.hrl").
 -include_lib("eunit/include/eunit.hrl").
 
-% -include_lib("jose/include/jose_jwk.hrl").
-
 -record('BankCard', {
     token :: binary()
 }).
