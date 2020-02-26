@@ -27,6 +27,8 @@
 -export_type([secret_keys/0]).
 -export_type([encoding_error/0]).
 -export_type([decoding_error/0]).
+-export_type([decryption_error/0]).
+-export_type([deserialization_error/0]).
 
 %% GenServer
 -export([child_spec /2]).
