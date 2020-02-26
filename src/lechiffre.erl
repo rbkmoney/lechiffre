@@ -17,8 +17,10 @@
 -type encoded_data()    :: lechiffre_crypto:jwe_compact().
 -type encoding_error()  :: lechiffre_crypto:encryption_error() |
                            lechiffre_thrift_utils:serialization_error().
--type decoding_error()  :: lechiffre_crypto:decryption_error() |
-                           lechiffre_thrift_utils:deserialization_error().
+-type decoding_error()  :: decryption_error() |
+                           deserialization_error().
+-type decryption_error() :: lechiffre_crypto:decryption_error().
+-type deserialization_error() :: lechiffre_thrift_utils:deserialization_error().
 
 -type thrift_type()     :: lechiffre_thrift_utils:thrift_type().
 
@@ -40,6 +42,8 @@
 -export([encode/3]).
 -export([decode/2]).
 -export([decode/3]).
+-export([decrypt/1]).
+-export([deserialize/2]).
 -export([read_secret_keys/1]).
 
 -spec child_spec(atom(), options()) ->
@@ -112,6 +116,23 @@ decode(ThriftType, EncryptedData, SecretKeys) ->
         DecryptError ->
             DecryptError
     end.
+
+-spec decrypt(encoded_data()) ->
+    {ok, binary()} |
+    {error, decryption_error()}.
+
+decrypt(EncryptedData) ->
+    SecretKeys = lookup_secret_value(),
+    DecryptionKeys = maps:get(decryption_keys, SecretKeys),
+    lechiffre_crypto:decrypt(DecryptionKeys, EncryptedData).
+
+-spec deserialize(thrift_type(), binary()) ->
+    {ok, data()} |
+    {error, deserialization_error()}.
+
+deserialize(ThriftType, ThriftBin) ->
+    lechiffre_thrift_utils:deserialize(ThriftType, ThriftBin).
+
 
 %% Supervisor
 
