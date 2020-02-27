@@ -27,6 +27,7 @@
     encode_with_params_ok_test/1,
 
     lechiffre_crypto_asym_ec_encode_ok_test/1,
+    lechiffre_crypto_asym_ecdh_a256kw_encode_ok_test/1,
     lechiffre_crypto_asym_rsa_encode_ok_test/1,
     lechiffre_init_jwk_no_kid_test/1
 ]).
@@ -38,6 +39,7 @@
 
 all() ->
     [ lechiffre_crypto_asym_ec_encode_ok_test
+    , lechiffre_crypto_asym_ecdh_a256kw_encode_ok_test
     , encrypt_hide_secret_key_ok_test
     , unknown_decrypt_key_test
     , wrong_key_test
@@ -125,6 +127,7 @@ get_source_binary(Kty, Kid, Alg) ->
 -spec encode_with_params_ok_test(config()) -> ok.
 
 -spec lechiffre_crypto_asym_ec_encode_ok_test(config()) -> ok.
+-spec lechiffre_crypto_asym_ecdh_a256kw_encode_ok_test(config()) -> ok.
 -spec lechiffre_init_jwk_no_kid_test(config()) -> ok.
 -spec lechiffre_crypto_asym_rsa_encode_ok_test(config()) -> ok.
 
@@ -188,20 +191,37 @@ lechiffre_crypto_asym_ec_encode_ok_test(Config) ->
     {ok, Result} = lechiffre_crypto:decrypt(DecryptionKeys, JweCompact),
     ?assertMatch(Plain, Result).
 
+lechiffre_crypto_asym_ecdh_a256kw_encode_ok_test(Config) ->
+    Plain = <<"bukabjaka">>,
+    #{
+        encryption_key := JwkPubl,
+        decryption_keys := DecryptionKeys
+    } = lechiffre:read_secret_keys(#{
+        encryption_key_path => {json_file, get_source_file(<<"2.ecdh_a256kw.publ.jwk">>, Config)},
+        decryption_key_paths => [
+            {json_file, get_source_file(<<"2.ecdh_a256kw.priv.jwk">>, Config)}
+        ]
+    }),
+    {ok, JweCompact} = lechiffre_crypto:encrypt(JwkPubl, Plain),
+    {ok, Result} = lechiffre_crypto:decrypt(DecryptionKeys, JweCompact),
+    ?assertMatch(Plain, Result).
+
 lechiffre_crypto_asym_rsa_encode_ok_test(Config) ->
     Plain = <<"bukabjaka">>,
     #{
         encryption_key := JwkPubl,
         decryption_keys := DecryptionKeys
     } = lechiffre:read_secret_keys(#{
-        encryption_key_path => {json_file, get_source_file(<<"1.ec.publ.jwk">>, Config)},
+        encryption_key_path => {json_file, get_source_file(<<"2.rsa.pub.jwk">>, Config)},
         decryption_key_paths => [
-            {json_file, get_source_file(<<"1.ec.priv.jwk">>, Config)}
+            {json_file, get_source_file(<<"2.rsa.jwk">>, Config)}
         ]
     }),
     {ok, JweCompact} = lechiffre_crypto:encrypt(JwkPubl, Plain),
     {ok, Result} = lechiffre_crypto:decrypt(DecryptionKeys, JweCompact),
     ?assertMatch(Plain, Result).
+
+
 
 lechiffre_init_jwk_no_kid_test(_Config) ->
     Source = get_source_binary(<<"oct">>, undefined, <<"dir">>),

@@ -44,8 +44,6 @@
 -export([encode/3]).
 -export([decode/2]).
 -export([decode/3]).
--export([decrypt/1]).
--export([deserialize/2]).
 -export([read_secret_keys/1]).
 
 -spec child_spec(atom(), options()) ->
@@ -119,23 +117,6 @@ decode(ThriftType, EncryptedData, SecretKeys) ->
             DecryptError
     end.
 
--spec decrypt(encoded_data()) ->
-    {ok, binary()} |
-    {error, decryption_error()}.
-
-decrypt(EncryptedData) ->
-    SecretKeys = lookup_secret_value(),
-    DecryptionKeys = maps:get(decryption_keys, SecretKeys),
-    lechiffre_crypto:decrypt(DecryptionKeys, EncryptedData).
-
--spec deserialize(thrift_type(), binary()) ->
-    {ok, data()} |
-    {error, deserialization_error()}.
-
-deserialize(ThriftType, ThriftBin) ->
-    lechiffre_thrift_utils:deserialize(ThriftType, ThriftBin).
-
-
 %% Supervisor
 
 -type st() :: #{
@@ -190,11 +171,12 @@ code_change(_OldVsn, State, _Extra) ->
 
 read_decryption_keys(KeySources) ->
     lists:foldl(fun(Source, Acc) ->
-        try
-            {Kid, Jwk} = read_jwk(Source),
-            add_jwk(Kid, Jwk, Acc)
-        catch throw:{?MODULE, Reason} ->
-            error({invalid_jwk, Source, Reason})
+        {Kid, Jwk} = read_jwk(Source),
+        case maps:is_key(Kid, Acc) of
+            true ->
+                error({invalid_jwk, Source, {duplicate_jwk_kid, Kid}});
+            false ->
+                maps:put(Kid, Jwk, Acc)
         end
     end, #{}, KeySources).
 
@@ -206,28 +188,28 @@ read_decryption_keys(KeySources) ->
 read_encryption_key(undefined) ->
     undefined;
 read_encryption_key(KeySource) ->
+    {_, Key} = read_jwk(KeySource),
+    Key.
+
+-spec read_jwk(key_source()) ->
+    {lechiffre_crypto:kid(), lechiffre_crypto:jwk()} |
+    no_return().
+
+read_jwk(KeySource) ->
     try
-        {_, EncryptionKey} = read_jwk(KeySource),
-        EncryptionKey
+        Jwk = lechiffre_crypto:read_jwk(KeySource),
+        ok = verify_jwk(Jwk),
+        Kid = get_jwk_kid(Jwk),
+        {Kid, Jwk}
     catch throw:{?MODULE, Reason} ->
         error({invalid_jwk, KeySource, Reason})
     end.
-
--spec read_jwk(key_source()) ->
-    {lechiffre_crypto:kid(), lechiffre_crypto:jwk()}.
-
-read_jwk(Source) ->
-    Jwk = lechiffre_crypto:read_jwk(Source),
-    ok = verify_jwk(Jwk),
-    Kid = get_jwk_kid(Jwk),
-    {Kid, Jwk}.
 
 -spec verify_jwk(lechiffre_crypto:jwk()) ->
     ok | no_return().
 
 verify_jwk(Jwk) ->
-    AlgEnc = get_jwk_alg(Jwk),
-    case lechiffre_crypto:verify_jwk_alg(AlgEnc) of
+    case lechiffre_crypto:verify_jwk_alg(Jwk) of
         ok ->
             ok;
         {error, {jwk_alg_unsupported, _, _} = Error} ->
@@ -243,28 +225,6 @@ get_jwk_kid(Jwk) ->
             throw({?MODULE, missing_kid});
         Kid ->
             Kid
-    end.
-
--spec get_jwk_alg(lechiffre_crypto:jwk()) ->
-    lechiffre_crypto:alg_enc() | no_return().
-
-get_jwk_alg(Jwk) ->
-    case lechiffre_crypto:get_jwk_alg(Jwk) of
-        notfound ->
-            throw({?MODULE, missing_alg});
-        Alg ->
-            Alg
-    end.
-
--spec add_jwk(binary(), lechiffre_crypto:jwk(), map()) ->
-    map() | no_return().
-
-add_jwk(KID, JWK, Map) ->
-    case maps:is_key(KID, Map) of
-        true ->
-            throw({duplicate_jwk_kid, KID});
-        false ->
-            maps:put(KID, JWK, Map)
     end.
 
 -spec create_table(secret_keys()) -> ok.
