@@ -1,0 +1,7 @@
+{
+  "use": "enc",
+  "kty": "oct",
+  "kid": "1",
+  "alg": "A256KW",
+  "k": "Tlh1aklkVkhZZzBRY3M5RTJJVG5kR2puY2FEMXQwYXI"
+}

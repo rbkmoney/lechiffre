@@ -5,8 +5,8 @@
 -behaviour(gen_server).
 
 -type options() :: #{
-    encryption_key_path  => key_source(),
-    decryption_key_paths => [key_source()]
+    encryption_source  => key_source(),
+    decryption_sources => [key_source()]
 }.
 -type key_source()  :: lechiffre_crypto:key_source().
 -type secret_keys() :: #{
@@ -66,8 +66,8 @@ start_link(Options) ->
 -spec read_secret_keys(options()) -> secret_keys().
 
 read_secret_keys(Options) ->
-    EncryptionPath = genlib_map:get(encryption_key_path, Options),
-    DecryptionKeyPaths = genlib_map:get(decryption_key_paths, Options, []),
+    EncryptionPath = genlib_map:get(encryption_source, Options),
+    DecryptionKeyPaths = genlib_map:get(decryption_sources, Options, []),
     DecryptionKeys = read_decryption_keys(DecryptionKeyPaths),
     EncryptionKey = read_encryption_key(EncryptionPath),
     genlib_map:compact(#{

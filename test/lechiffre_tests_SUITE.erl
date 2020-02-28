@@ -25,10 +25,6 @@
     wrong_encrypted_key_format_test/1,
     encrypt_hide_secret_key_ok_test/1,
     encode_with_params_ok_test/1,
-
-    lechiffre_crypto_asym_ec_encode_ok_test/1,
-    lechiffre_crypto_asym_ecdh_a256kw_encode_ok_test/1,
-    lechiffre_crypto_asym_rsa_encode_ok_test/1,
     lechiffre_init_jwk_no_kid_test/1
 ]).
 
@@ -38,14 +34,12 @@
     [atom()].
 
 all() ->
-    [ lechiffre_crypto_asym_ec_encode_ok_test
-    , lechiffre_crypto_asym_ecdh_a256kw_encode_ok_test
-    , encrypt_hide_secret_key_ok_test
+    [ encrypt_hide_secret_key_ok_test
     , unknown_decrypt_key_test
     , wrong_key_test
-    , wrong_encrypted_key_format_test        % encode_with_params_ok_test,
+    , wrong_encrypted_key_format_test
+    , encode_with_params_ok_test
     , lechiffre_init_jwk_no_kid_test
-    , lechiffre_crypto_asym_rsa_encode_ok_test
     ].
 
 -spec groups() ->
@@ -79,10 +73,10 @@ init_per_testcase(_Name, Config) ->
     FileSource1 = get_source_binary(<<"oct">>, <<"1">>, <<"dir">>),
     FileSource2 = get_source_binary(<<"oct">>, <<"2">>, <<"dir">>),
     Options = #{
-        encryption_key_path => FileSource1,
-        decryption_key_paths => [
-            FileSource1,
-            FileSource2
+        encryption_source => {json, FileSource1},
+        decryption_sources => [
+            {json, FileSource1},
+            {json, FileSource2}
         ]
     },
     ChildSpec = lechiffre:child_spec(lechiffre, Options),
@@ -98,11 +92,11 @@ end_per_testcase(_Name, Config) ->
     exit(SupPid, shutdown),
     Config.
 
--spec get_source_file(binary(), config()) ->
-    binary().
+% -spec get_source_file(binary(), config()) ->
+%     binary().
 
-get_source_file(FileName, Config) ->
-    filename:join(?config(data_dir, Config), FileName).
+% get_source_file(FileName, Config) ->
+%     filename:join(?config(data_dir, Config), FileName).
 
 -spec get_source_binary(binary(), number(), binary()) ->
     binary().
@@ -125,11 +119,7 @@ get_source_binary(Kty, Kid, Alg) ->
 -spec wrong_key_test(config()) -> ok.
 -spec wrong_encrypted_key_format_test(config()) -> ok.
 -spec encode_with_params_ok_test(config()) -> ok.
-
--spec lechiffre_crypto_asym_ec_encode_ok_test(config()) -> ok.
--spec lechiffre_crypto_asym_ecdh_a256kw_encode_ok_test(config()) -> ok.
 -spec lechiffre_init_jwk_no_kid_test(config()) -> ok.
--spec lechiffre_crypto_asym_rsa_encode_ok_test(config()) -> ok.
 
 encrypt_hide_secret_key_ok_test(_Config) ->
     {ThriftType, PaymentToolToken} = payment_tool_token(),
@@ -141,8 +131,8 @@ unknown_decrypt_key_test(_Config) ->
     JWK1 = get_source_binary(<<"oct">>, <<"1">>, <<"dir">>),
     JWK2 = get_source_binary(<<"oct">>, <<"2">>, <<"dir">>),
     Options = #{
-        encryption_key_path => JWK1,
-        decryption_key_paths => [JWK2]
+        encryption_source => {json, JWK1},
+        decryption_sources => [{json, JWK2}]
     },
     {ThriftType, PaymentToolToken} = payment_tool_token(),
     SecretKeys = lechiffre:read_secret_keys(Options),
@@ -154,8 +144,8 @@ wrong_key_test(_Config) ->
     JWK1 = get_source_binary(<<"oct">>, <<"1">>, <<"dir">>),
     JWK2 = get_source_binary(<<"oct">>, <<"1">>, <<"dir">>),
     Options = #{
-        encryption_key_path => JWK1,
-        decryption_key_paths => [JWK2]
+        encryption_source => {json, JWK1},
+        decryption_sources => [{json, JWK2}]
     },
     SecretKeys = lechiffre:read_secret_keys(Options),
     {ThriftType, PaymentToolToken} = payment_tool_token(),
@@ -176,58 +166,11 @@ wrong_encrypted_key_format_test(_Config) ->
     ErrorDecode = lechiffre:decode(ThriftType, EncryptedToken, SecretKeys),
     ?assertMatch({error, {decryption_failed, {bad_jwe_format, _Jwe}}}, ErrorDecode).
 
-lechiffre_crypto_asym_ec_encode_ok_test(Config) ->
-    Plain = <<"bukabjaka">>,
-    #{
-        encryption_key := JwkPubl,
-        decryption_keys := DecryptionKeys
-    } = lechiffre:read_secret_keys(#{
-        encryption_key_path => {json_file, get_source_file(<<"1.ec.publ.jwk">>, Config)},
-        decryption_key_paths => [
-            {json_file, get_source_file(<<"1.ec.priv.jwk">>, Config)}
-        ]
-    }),
-    {ok, JweCompact} = lechiffre_crypto:encrypt(JwkPubl, Plain),
-    {ok, Result} = lechiffre_crypto:decrypt(DecryptionKeys, JweCompact),
-    ?assertMatch(Plain, Result).
-
-lechiffre_crypto_asym_ecdh_a256kw_encode_ok_test(Config) ->
-    Plain = <<"bukabjaka">>,
-    #{
-        encryption_key := JwkPubl,
-        decryption_keys := DecryptionKeys
-    } = lechiffre:read_secret_keys(#{
-        encryption_key_path => {json_file, get_source_file(<<"2.ecdh_a256kw.publ.jwk">>, Config)},
-        decryption_key_paths => [
-            {json_file, get_source_file(<<"2.ecdh_a256kw.priv.jwk">>, Config)}
-        ]
-    }),
-    {ok, JweCompact} = lechiffre_crypto:encrypt(JwkPubl, Plain),
-    {ok, Result} = lechiffre_crypto:decrypt(DecryptionKeys, JweCompact),
-    ?assertMatch(Plain, Result).
-
-lechiffre_crypto_asym_rsa_encode_ok_test(Config) ->
-    Plain = <<"bukabjaka">>,
-    #{
-        encryption_key := JwkPubl,
-        decryption_keys := DecryptionKeys
-    } = lechiffre:read_secret_keys(#{
-        encryption_key_path => {json_file, get_source_file(<<"2.rsa.pub.jwk">>, Config)},
-        decryption_key_paths => [
-            {json_file, get_source_file(<<"2.rsa.jwk">>, Config)}
-        ]
-    }),
-    {ok, JweCompact} = lechiffre_crypto:encrypt(JwkPubl, Plain),
-    {ok, Result} = lechiffre_crypto:decrypt(DecryptionKeys, JweCompact),
-    ?assertMatch(Plain, Result).
-
-
-
 lechiffre_init_jwk_no_kid_test(_Config) ->
     Source = get_source_binary(<<"oct">>, undefined, <<"dir">>),
     Options = #{
-        encryption_key_path => Source,
-        decryption_key_paths => [Source]
+        encryption_source => {json, Source},
+        decryption_sources => [{json, Source}]
     },
     try
         lechiffre:read_secret_keys(Options)

@@ -10,8 +10,10 @@
 -type jwe()         :: map().
 -type jwe_compact() :: ascii_string().
 -type alg_enc()     :: binary().
--type key_source()  :: {json, binary()} |
-                       {json_file, file:filename_all()}.
+-type key_source()  :: {representation(), binary()} |
+                       {representation(), {file, file:filename_all()}}.
+
+-type representation() :: json.
 
 %% base62 string and '.'
 -type ascii_string() :: binary().
@@ -46,6 +48,7 @@
 -export([read_jwk/1]).
 -export([verify_jwk_alg/1]).
 -export([compute_random_iv/0]).
+-export([supported_algorithms/0]).
 
 -spec compute_random_iv() -> iv().
 
@@ -54,10 +57,10 @@ compute_random_iv() ->
 
 -spec read_jwk(key_source()) -> jwk().
 
-read_jwk(Source) when is_binary(Source) ->
+read_jwk({json, Source}) when is_binary(Source) ->
     Jwk = jose_jwk:from_binary(Source),
     Jwk;
-read_jwk({json_file, Source}) ->
+read_jwk({json, {file, Source}}) ->
     Jwk = jose_jwk:from_file(Source),
     Jwk.
 
@@ -70,7 +73,7 @@ encrypt(Jwk, Plain) ->
         #{<<"kid">> := KID} = Jwk#jose_jwk.fields,
         EncryptorWithoutKid = jose_jwk:block_encryptor(Jwk),
         Encryptor = EncryptorWithoutKid#{<<"kid">> => KID},
-        {_, Result} = jose_jwe:block_encrypt(get_cipher(Jwk), Plain, Encryptor),
+        {_, Result} = jose_jwe:block_encrypt(get_encryption_key(Jwk), Plain, Encryptor),
         {#{}, Compact} = jose_jwe:compact(Result),
         {ok, Compact}
     catch throw:{?MODULE, Error} ->
@@ -139,7 +142,7 @@ get_jwk_alg(Jwk) ->
 
 verify_jwk_alg(Jwk) ->
     AlgEnc = get_jwk_alg(Jwk),
-    {jwe, {alg, AlgList}, _, _} = lists:keyfind(jwe, 1, jose_jwa:supports()),
+    AlgList =  supported_algorithms(),
     case lists:member(AlgEnc, AlgList) of
         true ->
             ok;
@@ -158,14 +161,37 @@ get_key(KID, Keys) ->
             throw({?MODULE, {kid_notfound, KID}})
     end.
 
--spec get_cipher(jwk()) ->
+-spec get_encryption_key(jwk()) ->
     jwk() | {jwk(), any()}.
 
-get_cipher(Jwk) ->
-    Algorithm = get_jwk_alg(Jwk),
-    case Algorithm of
-        <<"ECDH-ES", _/binary>> ->
+get_encryption_key(Jwk) ->
+    case get_jwk_alg(Jwk) of
+        Alg when   Alg =:= <<"ECDH-ES">>
+            orelse Alg =:= <<"ECDH-ES+A128KW">>
+            orelse Alg =:= <<"ECDH-ES+A192KW">>
+            orelse Alg =:= <<"ECDH-ES+A256KW">>
+        ->
+            % Constructing new ephemeral keypair one the same curve
             {Jwk, jose_jwk:generate_key(Jwk)};
         _ ->
             Jwk
     end.
+
+-spec supported_algorithms() -> list().
+
+supported_algorithms() -> [
+    <<"ECDH-ES">>,
+    <<"ECDH-ES+A128KW">>,
+    <<"ECDH-ES+A192KW">>,
+    <<"ECDH-ES+A256KW">>,
+    <<"RSA-OAEP">>,
+    <<"RSA-OAEP-256">>,
+    <<"RSA1_5">>,
+    <<"dir">>,
+    <<"A128KW">>,
+    <<"A128GCMKW">>,
+    <<"A192KW">>,
+    <<"A192GCMKW">>,
+    <<"A256KW">>,
+    <<"A256GCMKW">>
+].
