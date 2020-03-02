@@ -193,7 +193,8 @@ get_encryption_key(Jwk) ->
     end.
 
 %% Don't support A{128, 192, 256}KW
-%% Smart dudes recommended: "Nobody should ever use AES-KW except when forced to for interop."(https://bugs.chromium.org/p/chromium/issues/detail?id=396407)
+%% Smart dudes recommended: "Nobody should ever use AES-KW except when forced to for interop.
+%% "(https://bugs.chromium.org/p/chromium/issues/detail?id=396407)
 %% Deprecated RSA1_5
 
 -type encryption_type() :: asymmetric | symmetric.
