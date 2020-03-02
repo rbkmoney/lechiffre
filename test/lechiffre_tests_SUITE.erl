@@ -70,8 +70,8 @@ end_per_suite(_C) ->
     config().
 
 init_per_testcase(_Name, Config) ->
-    FileSource1 = get_source_binary(<<"oct">>, <<"1">>, <<"dir">>),
-    FileSource2 = get_source_binary(<<"oct">>, <<"2">>, <<"dir">>),
+    FileSource1 = get_source_binary(<<"oct">>, <<"1">>, <<"A128GCMKW">>),
+    FileSource2 = get_source_binary(<<"oct">>, <<"2">>, <<"A128GCMKW">>),
     Options = #{
         encryption_source => {json, FileSource1},
         decryption_sources => [
@@ -128,8 +128,8 @@ encrypt_hide_secret_key_ok_test(_Config) ->
     ?assertEqual(PaymentToolToken, Value).
 
 unknown_decrypt_key_test(_Config) ->
-    JWK1 = get_source_binary(<<"oct">>, <<"1">>, <<"dir">>),
-    JWK2 = get_source_binary(<<"oct">>, <<"2">>, <<"dir">>),
+    JWK1 = get_source_binary(<<"oct">>, <<"1">>, <<"A128GCMKW">>),
+    JWK2 = get_source_binary(<<"oct">>, <<"2">>, <<"A128GCMKW">>),
     Options = #{
         encryption_source => {json, JWK1},
         decryption_sources => [{json, JWK2}]
@@ -141,8 +141,8 @@ unknown_decrypt_key_test(_Config) ->
     ?assertEqual({error, {decryption_failed, {kid_notfound, <<"1">>}}}, ErrorDecode).
 
 wrong_key_test(_Config) ->
-    JWK1 = get_source_binary(<<"oct">>, <<"1">>, <<"dir">>),
-    JWK2 = get_source_binary(<<"oct">>, <<"1">>, <<"dir">>),
+    JWK1 = get_source_binary(<<"oct">>, <<"1">>, <<"A128GCMKW">>),
+    JWK2 = get_source_binary(<<"oct">>, <<"1">>, <<"A128GCMKW">>),
     Options = #{
         encryption_source => {json, JWK1},
         decryption_sources => [{json, JWK2}]
@@ -158,7 +158,7 @@ wrong_encrypted_key_format_test(_Config) ->
     Header = crypto:strong_rand_bytes(32),
     Body = crypto:strong_rand_bytes(32),
     EncryptedToken = <<Header/binary, ".", Body/binary>>,
-    JWK1 = get_source_binary(<<"oct">>, <<"1">>, <<"dir">>),
+    JWK1 = get_source_binary(<<"oct">>, <<"1">>, <<"A128GCMKW">>),
     Options = #{
         decryption_key_paths => [JWK1]
     },
@@ -167,7 +167,7 @@ wrong_encrypted_key_format_test(_Config) ->
     ?assertMatch({error, {decryption_failed, {bad_jwe_format, _Jwe}}}, ErrorDecode).
 
 lechiffre_init_jwk_no_kid_test(_Config) ->
-    Source = get_source_binary(<<"oct">>, undefined, <<"dir">>),
+    Source = get_source_binary(<<"oct">>, undefined, <<"A128GCMKW">>),
     Options = #{
         encryption_source => {json, Source},
         decryption_sources => [{json, Source}]

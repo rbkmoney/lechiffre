@@ -21,6 +21,20 @@
 2. [JWK Thumbprint](https://www.rfc-editor.org/rfc/rfc7638).
 3. [JWA](https://www.rfc-editor.org/rfc/rfc7518.html).
 
+## Current supported encryption algorithms:
+- <<"ECDH-ES">>
+- <<"ECDH-ES+A128KW">>
+- <<"ECDH-ES+A192KW">>
+- <<"ECDH-ES+A256KW">>
+- <<"RSA-OAEP">>
+- <<"RSA-OAEP-256">>
+- <<"dir">> UNSAFE!!!
+- <<"A128GCMKW">>
+- <<"A192GCMKW">>
+- <<"A256GCMKW">>
+
+<<"dir">> is unsafe and can use only as decryption key for transition period.
+
 #### step-cli docs:
 1. [SmallStep](https://smallstep.com/docs/cli/crypto/jwk/create/).
 

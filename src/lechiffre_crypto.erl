@@ -49,6 +49,8 @@
 -export([verify_jwk_alg/1]).
 -export([compute_random_iv/0]).
 -export([supported_algorithms/0]).
+-export([supported_algorithms/1]).
+-export([is_algorithm_unsafe/1]).
 
 -spec compute_random_iv() -> iv().
 
@@ -138,16 +140,29 @@ get_jwk_alg(Jwk) ->
 
 -spec verify_jwk_alg(jwk()) ->
     ok |
-    {error, {jwk_alg_unsupported, alg_enc(), [alg_enc()]}}.
+    {error, {jwk_alg_unsafe, alg_enc()} |
+            {jwk_alg_unsupported, alg_enc(), [alg_enc()]}
+    }.
 
 verify_jwk_alg(Jwk) ->
     AlgEnc = get_jwk_alg(Jwk),
-    AlgList =  supported_algorithms(),
+    AlgList = supported_algorithms(),
     case lists:member(AlgEnc, AlgList) of
         true ->
             ok;
         false ->
             {error, {jwk_alg_unsupported, AlgEnc, AlgList}}
+    end.
+
+-spec is_algorithm_unsafe(jwk()) ->
+    ok | {error, {unsafe_algorithm, binary()}}.
+
+is_algorithm_unsafe(Jwk) ->
+    case get_jwk_alg(Jwk) of
+        <<"dir">> ->
+            {error, {unsafe_algorithm, <<"dir">>}};
+        _ ->
+            ok
     end.
 
 -spec get_key(kid(), decryption_keys()) ->
@@ -177,21 +192,34 @@ get_encryption_key(Jwk) ->
             Jwk
     end.
 
+%% Don't support A{128, 192, 256}KW
+%% Smart dudes recommended: "Nobody should ever use AES-KW except when forced to for interop."(https://bugs.chromium.org/p/chromium/issues/detail?id=396407)
+%% Deprecated RSA1_5
+
+-type encryption_type() :: asymmetric | symmetric.
 -spec supported_algorithms() -> list().
 
-supported_algorithms() -> [
-    <<"ECDH-ES">>,
-    <<"ECDH-ES+A128KW">>,
-    <<"ECDH-ES+A192KW">>,
-    <<"ECDH-ES+A256KW">>,
-    <<"RSA-OAEP">>,
-    <<"RSA-OAEP-256">>,
-    <<"RSA1_5">>,
-    <<"dir">>,
-    <<"A128KW">>,
-    <<"A128GCMKW">>,
-    <<"A192KW">>,
-    <<"A192GCMKW">>,
-    <<"A256KW">>,
-    <<"A256GCMKW">>
-].
+supported_algorithms() ->
+    supported_algorithms(asymmetric) ++
+    supported_algorithms(symmetric).
+
+-spec supported_algorithms(encryption_type()) -> list().
+
+supported_algorithms(EncryptionType) ->
+    Algos = #{
+        asymmetric => [
+            <<"ECDH-ES">>,
+            <<"ECDH-ES+A128KW">>,
+            <<"ECDH-ES+A192KW">>,
+            <<"ECDH-ES+A256KW">>,
+            <<"RSA-OAEP">>,
+            <<"RSA-OAEP-256">>
+        ],
+        symmetric => [
+            <<"dir">>,
+            <<"A128GCMKW">>,
+            <<"A192GCMKW">>,
+            <<"A256GCMKW">>
+        ]
+    },
+    maps:get(EncryptionType, Algos).

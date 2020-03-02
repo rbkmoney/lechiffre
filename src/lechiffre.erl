@@ -189,7 +189,12 @@ read_encryption_key(undefined) ->
     undefined;
 read_encryption_key(KeySource) ->
     {_, Key} = read_jwk(KeySource),
-    Key.
+    case lechiffre_crypto:is_algorithm_unsafe(Key) of
+        ok ->
+            Key;
+        {error, {unsafe_algorithm, _} = Error} ->
+            error({invalid_jwk, KeySource, Error})
+    end.
 
 -spec read_jwk(key_source()) ->
     {lechiffre_crypto:kid(), lechiffre_crypto:jwk()} |
