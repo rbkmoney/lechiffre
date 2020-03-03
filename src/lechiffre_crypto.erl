@@ -206,21 +206,19 @@ supported_algorithms() ->
 
 -spec supported_algorithms(encryption_type()) -> list().
 
-supported_algorithms(EncryptionType) ->
-    Algos = #{
-        asymmetric => [
-            <<"ECDH-ES">>,
-            <<"ECDH-ES+A128KW">>,
-            <<"ECDH-ES+A192KW">>,
-            <<"ECDH-ES+A256KW">>,
-            <<"RSA-OAEP">>,
-            <<"RSA-OAEP-256">>
-        ],
-        symmetric => [
-            <<"dir">>,
-            <<"A128GCMKW">>,
-            <<"A192GCMKW">>,
-            <<"A256GCMKW">>
-        ]
-    },
-    maps:get(EncryptionType, Algos).
+supported_algorithms(asymmetric) ->
+    [
+        <<"ECDH-ES">>,
+        <<"ECDH-ES+A128KW">>,
+        <<"ECDH-ES+A192KW">>,
+        <<"ECDH-ES+A256KW">>,
+        <<"RSA-OAEP">>,
+        <<"RSA-OAEP-256">>
+    ];
+supported_algorithms(symmetric) ->
+    [
+        <<"dir">>,
+        <<"A128GCMKW">>,
+        <<"A192GCMKW">>,
+        <<"A256GCMKW">>
+    ].

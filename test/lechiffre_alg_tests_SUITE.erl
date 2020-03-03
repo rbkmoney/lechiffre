@@ -1,7 +1,7 @@
 -module(lechiffre_alg_tests_SUITE).
 
 -include_lib("common_test/include/ct.hrl").
--include_lib("eunit/include/eunit.hrl").
+-include_lib("stdlib/include/assert.hrl").
 
 -export([all/0]).
 -export([groups/0]).
@@ -11,8 +11,6 @@
 -export([end_per_testcase/2]).
 -export([init_per_group/2]).
 -export([end_per_group/2]).
-
--export([test/0]).
 
 -export([
     lechiffre_crypto_encode_ok_test/1,
@@ -32,7 +30,7 @@
     [atom()].
 
 all() ->
-    Algos = lists:delete(<<"dir">>, lechiffre_crypto:supported_algorithms()),
+    Algos = lechiffre_crypto:supported_algorithms(),
     lists:foldl(fun(Alg, Acc)->
         GroupName = binary_to_atom(genlib_string:to_lower(Alg), latin1),
         [{group, GroupName}|Acc]
@@ -61,7 +59,8 @@ asym_encryption_and_decryption_tests() ->
     list().
 
 groups() ->
-    AlgosSym = lists:delete(<<"dir">>, lechiffre_crypto:supported_algorithms(symmetric)),
+    % AlgosSym = lists:delete(<<"dir">>, lechiffre_crypto:supported_algorithms(symmetric)),
+    AlgosSym = lechiffre_crypto:supported_algorithms(symmetric),
     AlgosAsym = lechiffre_crypto:supported_algorithms(asymmetric),
     Group1 = lists:foldl(fun(Alg, Acc)->
         Alg2 = binary_to_atom(genlib_string:to_lower(Alg), latin1),
@@ -72,12 +71,6 @@ groups() ->
         [{Alg2, [], asym_encryption_and_decryption_tests()}|Acc]
     end, [], AlgosAsym),
     Group1 ++ Group2.
-
--spec test() ->
-    any().
-
-test() ->
-    ok.
 
 -spec init_per_suite(config()) ->
     config().
@@ -107,6 +100,8 @@ end_per_testcase(_Name, Config) ->
 -spec init_per_group(group_name(), config()) ->
     config().
 
+init_per_group(dir, _Config) ->
+    {skip, <<"dir is unsafe encryption algorithm, support only for decryption in transition period">>};
 init_per_group(AlgType, Config) ->
     FileName = genlib_string:to_lower(atom_to_binary(AlgType, latin1)),
     [{jwk_file_name, FileName} | Config].
@@ -127,7 +122,7 @@ end_per_group(_Group, _C) ->
 
 lechiffre_crypto_encode_ok_test(Config) ->
     FileName = ?config(jwk_file_name, Config),
-    FileSource = {json, {file, get_source_file(<<FileName/binary, ".publ.jwk">>, Config)}},
+    FileSource = {json, {file, get_source_file(<<FileName/binary, ".priv.jwk">>, Config)}},
     {Jwk, DecryptionKeys} = read_secret_keys(FileSource, [FileSource]),
     Plain = <<"bukabjaka">>,
     {ok, JweCompact} = lechiffre_crypto:encrypt(Jwk, Plain),
@@ -136,8 +131,8 @@ lechiffre_crypto_encode_ok_test(Config) ->
 
 lechiffre_crypto_decode_fail_test(Config) ->
     FileName = ?config(jwk_file_name, Config),
-    JwkSource = {json, {file, get_source_file(<<FileName/binary, ".publ.jwk">>, Config)}},
-    WrongDecryptionSources = [{json, get_source_binary(<<"oct">>, <<"1">>, <<"dir">>)}],
+    JwkSource = {json, {file, get_source_file(<<FileName/binary, ".priv.jwk">>, Config)}},
+    WrongDecryptionSources = [{json, {file, get_source_file(<<FileName/binary, ".hack.priv.jwk">>, Config)}}],
     {Jwk, DecryptionKeys} = read_secret_keys(JwkSource, WrongDecryptionSources),
     Plain = <<"bukabjaka">>,
     {ok, JweCompact} = lechiffre_crypto:encrypt(Jwk, Plain),
@@ -190,17 +185,3 @@ read_secret_keys(SourceEncrypt, SourceDecrypt) ->
 
 get_source_file(FileName, Config) ->
     filename:join(?config(data_dir, Config), FileName).
-
--spec get_source_binary(binary(), number(), binary()) ->
-    binary().
-
-get_source_binary(Kty, Kid, Alg) ->
-    K = base64url:encode(crypto:strong_rand_bytes(32)),
-    Map = genlib_map:compact(#{
-        <<"alg">>   => Alg,
-        <<"kty">>   => Kty,
-        <<"k">>     => K,
-        <<"kid">>   => Kid
-    }),
-    {_, JwkBin} = jose_jwk:to_binary(jose_jwk:from(Map)),
-    JwkBin.

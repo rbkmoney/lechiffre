@@ -33,7 +33,7 @@
 - <<"A192GCMKW">>
 - <<"A256GCMKW">>
 
-<<"dir">> is unsafe and can use only as decryption key for transition period.
+<<"dir">> небезопасный алгоритм, используется только для дешифровки данных на переходный период.
 
 #### step-cli docs:
 1. [SmallStep](https://smallstep.com/docs/cli/crypto/jwk/create/).

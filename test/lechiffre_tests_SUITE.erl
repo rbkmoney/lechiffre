@@ -92,12 +92,6 @@ end_per_testcase(_Name, Config) ->
     exit(SupPid, shutdown),
     Config.
 
-% -spec get_source_file(binary(), config()) ->
-%     binary().
-
-% get_source_file(FileName, Config) ->
-%     filename:join(?config(data_dir, Config), FileName).
-
 -spec get_source_binary(binary(), number(), binary()) ->
     binary().
 
