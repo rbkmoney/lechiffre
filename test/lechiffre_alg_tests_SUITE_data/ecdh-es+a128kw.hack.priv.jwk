@@ -1,7 +1,7 @@
 {
   "use": "enc",
   "kty": "EC",
-  "kid": "EojhTEcvFUMqi0w4H0aB0UujkuYR3IKja4s3gjSnUp8",
+  "kid": "26RQPQ98yOfbva3I8JOI3jzXUGbHa0mjiwAQ27vMaI8",
   "crv": "P-256",
   "alg": "ECDH-ES+A128KW",
   "x": "tWWoEzp8MuN9Khc0Azg1ycXaRzT10iZEHqpPbymp2uI",

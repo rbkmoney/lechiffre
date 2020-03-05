@@ -93,7 +93,7 @@ decrypt(SecretKeys, JweCompact) ->
         Jwk = get_key(Kid, SecretKeys),
         case jose_jwe:block_decrypt(Jwk, Jwe) of
             {error, _JWE} ->
-               {error, {decryption_failed, unknown}};
+                {error, {decryption_failed, unknown}};
             {DecryptedData, _JWE} ->
                 {ok, DecryptedData}
         end

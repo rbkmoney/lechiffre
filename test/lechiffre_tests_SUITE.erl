@@ -1,7 +1,7 @@
 -module(lechiffre_tests_SUITE).
 
 -include_lib("common_test/include/ct.hrl").
--include_lib("eunit/include/eunit.hrl").
+-include_lib("stdlib/include/assert.hrl").
 
 -record('BankCard', {
     token :: binary()
@@ -16,8 +16,6 @@
 -export([end_per_suite/1]).
 -export([init_per_testcase/2]).
 -export([end_per_testcase/2]).
-
--export([test/0]).
 
 -export([
     unknown_decrypt_key_test/1,
@@ -47,12 +45,6 @@ all() ->
 
 groups() ->
     [].
-
--spec test() ->
-    any().
-
-test() ->
-    ok.
 
 -spec init_per_suite(config()) ->
     config().

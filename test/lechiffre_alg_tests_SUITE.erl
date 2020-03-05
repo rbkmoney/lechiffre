@@ -32,8 +32,8 @@
 all() ->
     Algos = lechiffre_crypto:supported_algorithms(),
     lists:foldl(fun(Alg, Acc)->
-        GroupName = binary_to_atom(genlib_string:to_lower(Alg), latin1),
-        [{group, GroupName}|Acc]
+        GroupName = binary_to_atom(Alg, latin1),
+        [{group, GroupName} | Acc]
     end, [], Algos).
 
 -spec encryption_and_decryption_tests() ->
@@ -59,17 +59,16 @@ asym_encryption_and_decryption_tests() ->
     list().
 
 groups() ->
-    % AlgosSym = lists:delete(<<"dir">>, lechiffre_crypto:supported_algorithms(symmetric)),
+    GetGroup = fun(Algos, Tests) ->
+        lists:foldl(fun(Alg, Acc)->
+            GroupName = binary_to_atom(Alg, latin1),
+            [{GroupName, [], Tests} | Acc]
+        end, [], Algos)
+    end,
     AlgosSym = lechiffre_crypto:supported_algorithms(symmetric),
     AlgosAsym = lechiffre_crypto:supported_algorithms(asymmetric),
-    Group1 = lists:foldl(fun(Alg, Acc)->
-        Alg2 = binary_to_atom(genlib_string:to_lower(Alg), latin1),
-        [{Alg2, [], encryption_and_decryption_tests()}|Acc]
-    end, [], AlgosSym),
-    Group2 = lists:foldl(fun(Alg, Acc)->
-        Alg2 = binary_to_atom(genlib_string:to_lower(Alg), latin1),
-        [{Alg2, [], asym_encryption_and_decryption_tests()}|Acc]
-    end, [], AlgosAsym),
+    Group1 = GetGroup(AlgosSym, encryption_and_decryption_tests()),
+    Group2 = GetGroup(AlgosAsym, asym_encryption_and_decryption_tests()),
     Group1 ++ Group2.
 
 -spec init_per_suite(config()) ->
@@ -164,7 +163,12 @@ lechiffre_crypto_asym_hack_decode_ok_test(Config) ->
     {JwkPubl, HackKeys} = read_secret_keys(JwkPublSource, [HackPrivSource]),
     Plain = <<"bukabjaka">>,
     {ok, JweCompact} = lechiffre_crypto:encrypt(JwkPubl, Plain),
-    {error, {decryption_failed, {kid_notfound, _}}} = lechiffre_crypto:decrypt(HackKeys, JweCompact).
+    case FileName of
+        RSA when RSA =:= <<"rsa-oaep">>;
+        RSA =:= <<"rsa-oaep-256">> ->
+            ?assertError(decrypt_failed, lechiffre_crypto:decrypt(HackKeys, JweCompact));
+        _ -> {error, {decryption_failed, unknown}} = lechiffre_crypto:decrypt(HackKeys, JweCompact)
+    end.
 %%
 
 -spec read_secret_keys(key_source(), key_sources()) ->
