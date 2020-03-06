@@ -163,12 +163,8 @@ lechiffre_crypto_asym_hack_decode_ok_test(Config) ->
     {JwkPubl, HackKeys} = read_secret_keys(JwkPublSource, [HackPrivSource]),
     Plain = <<"bukabjaka">>,
     {ok, JweCompact} = lechiffre_crypto:encrypt(JwkPubl, Plain),
-    case FileName of
-        RSA when RSA =:= <<"rsa-oaep">>;
-        RSA =:= <<"rsa-oaep-256">> ->
-            ?assertError(decrypt_failed, lechiffre_crypto:decrypt(HackKeys, JweCompact));
-        _ -> {error, {decryption_failed, unknown}} = lechiffre_crypto:decrypt(HackKeys, JweCompact)
-    end.
+    {error, {decryption_failed, unknown}} = lechiffre_crypto:decrypt(HackKeys, JweCompact).
+
 %%
 
 -spec read_secret_keys(key_source(), key_sources()) ->

@@ -97,8 +97,13 @@ decrypt(SecretKeys, JweCompact) ->
             {DecryptedData, _JWE} ->
                 {ok, DecryptedData}
         end
-    catch throw:{?MODULE, Error} ->
-        {error, {decryption_failed, Error}}
+    catch
+        throw:{?MODULE, Error} ->
+            {error, {decryption_failed, Error}};
+        %% This error was catch For RSA-OAEP&RSA-OAEP-256
+        %% if we try using wrong decryption key but with right kid
+        error:decrypt_failed ->
+            {error, {decryption_failed, unknown}}
     end.
 
 %%% Internal functions
@@ -124,6 +129,7 @@ get_jwe_kid(#{<<"protected">> := EncHeader}) ->
         maps:get(<<"kid">>, Header)
     catch _Type:Error ->
         throw({?MODULE, {bad_jwe_header_format, Error}})
+
     end.
 
 -spec get_jwk_kid(jwk()) -> kid() | notfound.
