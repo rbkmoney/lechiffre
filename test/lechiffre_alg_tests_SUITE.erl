@@ -163,7 +163,7 @@ lechiffre_crypto_asym_hack_decode_ok_test(Config) ->
     {JwkPubl, HackKeys} = read_secret_keys(JwkPublSource, [HackPrivSource]),
     Plain = <<"bukabjaka">>,
     {ok, JweCompact} = lechiffre_crypto:encrypt(JwkPubl, Plain),
-    {error, {decryption_failed, unknown}} = lechiffre_crypto:decrypt(HackKeys, JweCompact).
+    ?assertEqual({error, {decryption_failed, unknown}}, lechiffre_crypto:decrypt(HackKeys, JweCompact)).
 
 %%
 

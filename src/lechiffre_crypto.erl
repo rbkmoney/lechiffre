@@ -129,7 +129,6 @@ get_jwe_kid(#{<<"protected">> := EncHeader}) ->
         maps:get(<<"kid">>, Header)
     catch _Type:Error ->
         throw({?MODULE, {bad_jwe_header_format, Error}})
-
     end.
 
 -spec get_jwk_kid(jwk()) -> kid() | notfound.
