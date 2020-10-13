@@ -51,16 +51,16 @@ distclean:
 	$(REBAR) clean -a
 
 xref:
-	$(REBAR) xref
+	$(REBAR) as test xref
 
 dialyze:
-	$(REBAR) dialyzer
+	$(REBAR) as test dialyzer
 
 lint:
 	elvis rock
 
 check_format:
-	$(REBAR) fmt -c
+	$(REBAR) as test fmt -c
 
 format:
 	$(REBAR) fmt -w
