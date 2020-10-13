@@ -141,8 +141,7 @@ handle_info(Info, State) ->
     _ = logger:warning("unexpected info received: ~tp", [Info]),
     {noreply, State}.
 
--spec terminate(Reason, atom()) -> ok when
-    Reason :: normal | shutdown | {shutdown, term()} | term().
+-spec terminate(Reason, atom()) -> ok when Reason :: normal | shutdown | {shutdown, term()} | term().
 terminate(_Reason, _State) ->
     ok.
 
