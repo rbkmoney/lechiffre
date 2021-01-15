@@ -23,7 +23,7 @@
 -type config() :: [{atom(), term()}].
 -type group_name() :: atom().
 
--type key_source() :: lechiffre:key_source().
+-type key_source() :: lechiffre_crypto:key_source().
 -type key_sources() :: [key_source()].
 
 -spec all() -> [atom()].

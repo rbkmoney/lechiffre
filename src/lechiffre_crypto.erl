@@ -120,7 +120,7 @@ expand_jwe(JweCompact) ->
 -spec get_jwe_kid(jwe()) -> kid() | no_return().
 get_jwe_kid(#{<<"protected">> := EncHeader}) ->
     try
-        HeaderJson = base64url:decode(EncHeader),
+        {ok, HeaderJson} = jose_base64url:decode(EncHeader),
         Header = jsx:decode(HeaderJson, [return_maps]),
         maps:get(<<"kid">>, Header)
     catch
