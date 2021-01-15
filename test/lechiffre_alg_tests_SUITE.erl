@@ -88,8 +88,6 @@ end_per_testcase(_Name, Config) ->
     Config.
 
 -spec init_per_group(group_name(), config()) -> config().
-init_per_group(dir, _Config) ->
-    {skip, <<"dir is unsafe encryption algorithm, support only for decryption in transition period">>};
 init_per_group(AlgType, Config) ->
     FileName = genlib_string:to_lower(atom_to_binary(AlgType, latin1)),
     [{jwk_file_name, FileName} | Config].

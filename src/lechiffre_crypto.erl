@@ -190,6 +190,7 @@ get_encryption_key(Jwk) ->
 %% Smart dudes recommended: "Nobody should ever use AES-KW except when forced to for interop.
 %% "(https://bugs.chromium.org/p/chromium/issues/detail?id=396407)
 %% Deprecated RSA1_5
+%% Drop support dir
 
 -type encryption_type() :: asymmetric | symmetric.
 
@@ -210,7 +211,6 @@ supported_algorithms(asymmetric) ->
     ];
 supported_algorithms(symmetric) ->
     [
-        <<"dir">>,
         <<"A128GCMKW">>,
         <<"A192GCMKW">>,
         <<"A256GCMKW">>
